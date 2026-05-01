@@ -1,7 +1,7 @@
 """Pydantic schemas for Model."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,9 @@ class ModelCreate(ModelBase):
     """
 
     id: Optional[int] = Field(default=None, description="Optional ID for the model")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Additional metadata about the model"
+    )
 
 
 class ModelResponse(ModelBase):
