@@ -68,4 +68,11 @@ export const logApi = {
   export: (format, params) => api.get('/logs/export', { params: { format, ...params } })
 }
 
+// 系统监控 API
+export const systemApi = {
+  gpu: () => api.get('/system/gpu'),
+  gpuById: (index) => api.get(`/system/gpu/${index}`),
+  memory: () => api.get('/system/memory')
+}
+
 export default api

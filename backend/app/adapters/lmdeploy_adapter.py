@@ -1,4 +1,4 @@
-"""vLLM 推理引擎适配器"""
+"""LMDeploy 推理引擎适配器"""
 
 from typing import Dict, Any, List, Optional
 import re
@@ -6,15 +6,15 @@ import re
 from .base import BaseEngineAdapter
 
 
-class VLLMAdapter(BaseEngineAdapter):
-    """vLLM 推理引擎适配器"""
+class LMDeployAdapter(BaseEngineAdapter):
+    """LMDeploy 推理引擎适配器"""
 
-    _version = "0.16.0"  # 默认版本
+    _version = "0.12.2"  # 默认版本
 
     @property
     def name(self) -> str:
         """引擎名称"""
-        return "vllm"
+        return "lmdeploy"
 
     def get_supported_params(self) -> Dict[str, Any]:
         """获取支持的参数定义（从配置文件动态加载）"""
@@ -29,11 +29,11 @@ class VLLMAdapter(BaseEngineAdapter):
     def _get_fallback_params(self) -> Dict[str, Any]:
         """配置文件不存在时的备用参数"""
         return {
-            "model": {
+            "model_path": {
                 "type": "string",
                 "default": None,
                 "required": True,
-                "description": "模型名称或路径",
+                "description": "模型路径或名称",
                 "group": "basic"
             },
             "dtype": {
@@ -43,21 +43,7 @@ class VLLMAdapter(BaseEngineAdapter):
                 "description": "数据类型",
                 "group": "basic"
             },
-            "host": {
-                "type": "string",
-                "default": "0.0.0.0",
-                "description": "服务监听地址",
-                "group": "api"
-            },
-            "port": {
-                "type": "int",
-                "default": 8000,
-                "min": 1,
-                "max": 65535,
-                "description": "服务监听端口",
-                "group": "api"
-            },
-            "tensor_parallel_size": {
+            "tp": {
                 "type": "int",
                 "default": 1,
                 "min": 1,
@@ -65,19 +51,34 @@ class VLLMAdapter(BaseEngineAdapter):
                 "description": "张量并行大小",
                 "group": "gpu"
             },
-            "gpu_memory_utilization": {
+            "cache_max_entry_count": {
                 "type": "float",
-                "default": 0.9,
+                "default": 0.8,
                 "min": 0.1,
                 "max": 1.0,
-                "description": "GPU 显存利用率",
+                "description": "KV Cache 显存占用比例",
                 "group": "gpu"
             },
-            "max_model_len": {
+            "session_len": {
                 "type": "int",
                 "default": None,
-                "description": "模型最大上下文长度",
+                "min": 1,
+                "description": "会话最大长度",
                 "group": "gpu"
+            },
+            "server_name": {
+                "type": "string",
+                "default": "0.0.0.0",
+                "description": "服务监听地址",
+                "group": "api"
+            },
+            "server_port": {
+                "type": "int",
+                "default": 8001,
+                "min": 1,
+                "max": 65535,
+                "description": "服务监听端口",
+                "group": "api"
             },
         }
 
@@ -96,37 +97,29 @@ class VLLMAdapter(BaseEngineAdapter):
         }
 
     def build_command(self, config: Dict[str, Any]) -> str:
-        """构建 vllm serve 命令"""
+        """构建 lmdeploy serve 命令"""
         # 获取必需参数
-        model = config.get("model")
-        if not model:
-            raise ValueError("model 参数是必需的")
+        model_path = config.get("model_path")
+        if not model_path:
+            raise ValueError("model_path 参数是必需的")
 
         # 构建基础命令
-        cmd_parts = ["vllm serve", model]
+        cmd_parts = ["lmdeploy serve api_server", model_path]
 
         # 参数映射：配置名 -> 命令行参数名
         param_mapping = {
-            "host": "--host",
-            "port": "--port",
+            "server_name": "--server-name",
+            "server_port": "--server-port",
             "dtype": "--dtype",
-            "tensor_parallel_size": "--tensor-parallel-size",
-            "gpu_memory_utilization": "--gpu-memory-utilization",
-            "max_model_len": "--max-model-len",
-            "tokenizer": "--tokenizer",
-            "trust_remote_code": "--trust-remote-code",
-            "kv_cache_dtype": "--kv-cache-dtype",
-            "enable_prefix_caching": "--enable-prefix-caching",
-            "enable_chunked_prefill": "--enable-chunked-prefill",
-            "api_key": "--api-key",
-            "speculative_model": "--speculative-model",
+            "tp": "--tp",
+            "cache_max_entry_count": "--cache-max-entry-count",
+            "session_len": "--session-len",
+            "tokenizer_path": "--tokenizer-path",
+            "max_prefill_token_num": "--max-prefill-token-num",
             "quantization": "--quantization",
-            "swap_space": "--swap-space",
-            "max_logprobs": "--max-logprobs",
-            "download_dir": "--download-dir",
-            "load_format": "--load-format",
-            "enforce_eager": "--enforce-eager",
-            "max_seq_len_to_capture": "--max-seq-len-to-capture",
+            "model_format": "--model-format",
+            "api_key": "--api-key",
+            "trust_remote_code": "--trust-remote-code",
         }
 
         # 获取参数定义（用于检查默认值）
@@ -142,7 +135,7 @@ class VLLMAdapter(BaseEngineAdapter):
             default = params_def.get(config_name, {}).get('default')
 
             # 检查是否需要添加（非默认值或必需参数）
-            if value == default and config_name not in ['host', 'port']:
+            if value == default and config_name not in ['server_name', 'server_port']:
                 continue
 
             # 布尔类型特殊处理
@@ -153,11 +146,16 @@ class VLLMAdapter(BaseEngineAdapter):
             else:
                 cmd_parts.append(f"{cli_name} {value}")
 
+        # 特殊处理：turbomind 默认启用，如果禁用则使用 pytorch backend
+        turbomind = config.get("turbomind", True)
+        if not turbomind:
+            cmd_parts.append("--backend pytorch")
+
         return " ".join(cmd_parts)
 
     def get_default_port(self) -> int:
         """获取默认端口"""
-        return 8000
+        return 8001
 
     def transform_request(self, request: Dict[str, Any], api_type: str) -> Dict[str, Any]:
         """转换请求格式"""
@@ -262,14 +260,16 @@ class VLLMAdapter(BaseEngineAdapter):
             "num_requests_waiting": None,
             "time_to_first_token_seconds": None,
             "generation_tokens_total": None,
+            "avg_latency_seconds": None,
             "raw_metrics": {}
         }
 
         patterns = {
-            "num_requests_running": r'vllm:num_requests_running\{[^}]*\}\s+([\d.]+)',
-            "num_requests_waiting": r'vllm:num_requests_waiting\{[^}]*\}\s+([\d.]+)',
-            "time_to_first_token_seconds": r'vllm:time_to_first_token_seconds\{[^}]*\}\s+([\d.]+)',
-            "generation_tokens_total": r'vllm:generation_tokens_total\{[^}]*\}\s+([\d.]+)'
+            "num_requests_running": r'lmdeploy:num_requests_running\{[^}]*\}\s+([\d.]+)',
+            "num_requests_waiting": r'lmdeploy:num_requests_waiting\{[^}]*\}\s+([\d.]+)',
+            "time_to_first_token_seconds": r'lmdeploy:time_to_first_token_seconds\{[^}]*\}\s+([\d.]+)',
+            "generation_tokens_total": r'lmdeploy:generation_tokens_total\{[^}]*\}\s+([\d.]+)',
+            "avg_latency_seconds": r'lmdeploy:avg_latency_seconds\{[^}]*\}\s+([\d.]+)'
         }
 
         for key, pattern in patterns.items():
@@ -291,4 +291,4 @@ class VLLMAdapter(BaseEngineAdapter):
 
     def health_check_url(self, port: int) -> str:
         """健康检查 URL"""
-        return f"http://localhost:{port}/health"
+        return f"http://localhost:{port}/v1/models"

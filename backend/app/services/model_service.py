@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.config import MODELS_DIR
+from app.models.config import ModelScanPath
 from app.models.model import Model
 from app.schemas.model import ModelCreate
 
@@ -61,34 +62,81 @@ class ModelService:
         """
         return self.db.query(Model).filter(Model.id == model_id).first()
 
-    def scan_models(self) -> List[Dict[str, Any]]:
-        """Scan the models directory for available models.
+    def _get_scan_paths(self) -> List[Path]:
+        """Get all enabled model scan paths.
 
-        This method scans the configured MODELS_DIR directory and discovers
-        model files/directories, detecting their format and supported engines.
+        Returns paths from database configuration if available,
+        otherwise falls back to default MODELS_DIR.
+
+        Returns:
+            List of Path objects to scan for models.
+        """
+        # Get enabled paths from database
+        db_paths = (
+            self.db.query(ModelScanPath)
+            .filter(ModelScanPath.enabled == 1)
+            .all()
+        )
+
+        if db_paths:
+            paths = []
+            for p in db_paths:
+                path = Path(p.path)
+                if path.exists() and path.is_dir():
+                    paths.append(path)
+            return paths
+
+        # Fallback to default directory
+        if MODELS_DIR.exists():
+            return [MODELS_DIR]
+        return []
+
+    def scan_models(self) -> List[Dict[str, Any]]:
+        """Scan the configured model directories for available models.
+
+        This method scans all enabled scan paths from database configuration
+        (or default MODELS_DIR if none configured) and discovers model files/directories,
+        detecting their format and supported engines.
 
         Returns:
             List of dictionaries containing discovered model information.
             Each dict contains: name, path, format, size, supported_engines.
         """
         discovered_models: List[Dict[str, Any]] = []
+        seen_paths: set = set()
 
-        if not MODELS_DIR.exists():
+        scan_paths = self._get_scan_paths()
+        if not scan_paths:
             return discovered_models
 
-        # Scan directory contents
-        for item in MODELS_DIR.iterdir():
-            if item.is_file():
-                # Check for GGUF files
-                if item.suffix.lower() == ".gguf":
-                    model_info = self._create_model_info(item)
-                    discovered_models.append(model_info)
-            elif item.is_dir():
-                # Check for safetensors or pytorch models in directory
-                format_type = self.detect_model_format(item)
-                if format_type != "unknown":
-                    model_info = self._create_model_info(item)
-                    discovered_models.append(model_info)
+        for scan_path in scan_paths:
+            try:
+                # Scan directory contents
+                for item in scan_path.iterdir():
+                    # Skip already seen paths
+                    item_str = str(item.resolve())
+                    if item_str in seen_paths:
+                        continue
+                    seen_paths.add(item_str)
+
+                    try:
+                        if item.is_file():
+                            # Check for GGUF files
+                            if item.suffix.lower() == ".gguf":
+                                model_info = self._create_model_info(item)
+                                discovered_models.append(model_info)
+                        elif item.is_dir():
+                            # Check for safetensors or pytorch models in directory
+                            format_type = self.detect_model_format(item)
+                            if format_type != "unknown":
+                                model_info = self._create_model_info(item)
+                                discovered_models.append(model_info)
+                    except (PermissionError, OSError):
+                        # Skip items we can't access
+                        continue
+            except (PermissionError, OSError):
+                # Skip directories we can't scan
+                continue
 
         return discovered_models
 

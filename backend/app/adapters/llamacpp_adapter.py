@@ -1,4 +1,4 @@
-"""vLLM 推理引擎适配器"""
+"""Llama.cpp 推理引擎适配器"""
 
 from typing import Dict, Any, List, Optional
 import re
@@ -6,15 +6,15 @@ import re
 from .base import BaseEngineAdapter
 
 
-class VLLMAdapter(BaseEngineAdapter):
-    """vLLM 推理引擎适配器"""
+class LlamaCppAdapter(BaseEngineAdapter):
+    """Llama.cpp 推理引擎适配器"""
 
-    _version = "0.16.0"  # 默认版本
+    _version = "b4500"  # 默认版本（llama.cpp 使用 commit hash 或版本号）
 
     @property
     def name(self) -> str:
         """引擎名称"""
-        return "vllm"
+        return "llamacpp"
 
     def get_supported_params(self) -> Dict[str, Any]:
         """获取支持的参数定义（从配置文件动态加载）"""
@@ -33,15 +33,38 @@ class VLLMAdapter(BaseEngineAdapter):
                 "type": "string",
                 "default": None,
                 "required": True,
-                "description": "模型名称或路径",
+                "description": "GGUF 模型文件路径",
                 "group": "basic"
             },
-            "dtype": {
+            "model_alias": {
                 "type": "string",
-                "default": "auto",
-                "choices": ["auto", "float16", "bfloat16", "float32"],
-                "description": "数据类型",
+                "default": None,
+                "description": "模型别名",
                 "group": "basic"
+            },
+            "n_gpu_layers": {
+                "type": "int",
+                "default": -1,
+                "min": -1,
+                "max": 999,
+                "description": "GPU 层数，-1 表示全部载入 GPU",
+                "group": "gpu"
+            },
+            "n_ctx": {
+                "type": "int",
+                "default": 4096,
+                "min": 512,
+                "max": 131072,
+                "description": "上下文长度",
+                "group": "gpu"
+            },
+            "n_batch": {
+                "type": "int",
+                "default": 512,
+                "min": 1,
+                "max": 16384,
+                "description": "批处理大小",
+                "group": "gpu"
             },
             "host": {
                 "type": "string",
@@ -51,33 +74,11 @@ class VLLMAdapter(BaseEngineAdapter):
             },
             "port": {
                 "type": "int",
-                "default": 8000,
+                "default": 8080,
                 "min": 1,
                 "max": 65535,
                 "description": "服务监听端口",
                 "group": "api"
-            },
-            "tensor_parallel_size": {
-                "type": "int",
-                "default": 1,
-                "min": 1,
-                "max": 8,
-                "description": "张量并行大小",
-                "group": "gpu"
-            },
-            "gpu_memory_utilization": {
-                "type": "float",
-                "default": 0.9,
-                "min": 0.1,
-                "max": 1.0,
-                "description": "GPU 显存利用率",
-                "group": "gpu"
-            },
-            "max_model_len": {
-                "type": "int",
-                "default": None,
-                "description": "模型最大上下文长度",
-                "group": "gpu"
             },
         }
 
@@ -96,44 +97,59 @@ class VLLMAdapter(BaseEngineAdapter):
         }
 
     def build_command(self, config: Dict[str, Any]) -> str:
-        """构建 vllm serve 命令"""
+        """构建 llama-server 命令"""
         # 获取必需参数
         model = config.get("model")
         if not model:
             raise ValueError("model 参数是必需的")
 
         # 构建基础命令
-        cmd_parts = ["vllm serve", model]
+        cmd_parts = ["llama-server", f"-m {model}"]
 
         # 参数映射：配置名 -> 命令行参数名
+        # 注意：llama.cpp 使用短参数名和长参数名混合
         param_mapping = {
             "host": "--host",
             "port": "--port",
-            "dtype": "--dtype",
-            "tensor_parallel_size": "--tensor-parallel-size",
-            "gpu_memory_utilization": "--gpu-memory-utilization",
-            "max_model_len": "--max-model-len",
-            "tokenizer": "--tokenizer",
-            "trust_remote_code": "--trust-remote-code",
-            "kv_cache_dtype": "--kv-cache-dtype",
-            "enable_prefix_caching": "--enable-prefix-caching",
-            "enable_chunked_prefill": "--enable-chunked-prefill",
-            "api_key": "--api-key",
-            "speculative_model": "--speculative-model",
-            "quantization": "--quantization",
-            "swap_space": "--swap-space",
-            "max_logprobs": "--max-logprobs",
-            "download_dir": "--download-dir",
-            "load_format": "--load-format",
-            "enforce_eager": "--enforce-eager",
-            "max_seq_len_to_capture": "--max-seq-len-to-capture",
+            "n_ctx": "-c",
+            "n_gpu_layers": "-ngl",
+            "n_batch": "--batch-size",
+            "model_alias": "--alias",
+            "n_predict": "-n",
+            "temp": "--temp",
+            "top_k": "--top-k",
+            "top_p": "--top-p",
+            "repeat_penalty": "--repeat-penalty",
+            "mlock": "--mlock",
+            "no_mmap": "--no-mmap",
+            "flash_attn": "--flash-attn",
+            "rope_scaling": "--rope-scaling",
+            "rope_freq_base": "--rope-freq-base",
+            "threads": "--threads",
+            "tensor_split": "--tensor-split",
+            "timeout": "--timeout",
         }
 
         # 获取参数定义（用于检查默认值）
         params_def = self.get_supported_params()
 
-        # 添加参数到命令
+        # 特殊参数单独处理
+        # host 和 port 始终添加
+        host = config.get("host", "0.0.0.0")
+        port = config.get("port", 8080)
+        cmd_parts.append(f"--host {host}")
+        cmd_parts.append(f"--port {port}")
+
+        # n_ctx 上下文长度始终添加
+        n_ctx = config.get("n_ctx", 4096)
+        cmd_parts.append(f"-c {n_ctx}")
+
+        # 添加其他参数到命令
         for config_name, cli_name in param_mapping.items():
+            # 跳过已处理的参数
+            if config_name in ['host', 'port', 'n_ctx']:
+                continue
+
             value = config.get(config_name)
             if value is None:
                 continue
@@ -141,8 +157,12 @@ class VLLMAdapter(BaseEngineAdapter):
             # 获取默认值
             default = params_def.get(config_name, {}).get('default')
 
-            # 检查是否需要添加（非默认值或必需参数）
-            if value == default and config_name not in ['host', 'port']:
+            # n_gpu_layers 特殊处理：-1 是默认值，不添加参数
+            if config_name == 'n_gpu_layers' and value == -1:
+                continue
+
+            # 检查是否需要添加（非默认值）
+            if value == default:
                 continue
 
             # 布尔类型特殊处理
@@ -157,7 +177,7 @@ class VLLMAdapter(BaseEngineAdapter):
 
     def get_default_port(self) -> int:
         """获取默认端口"""
-        return 8000
+        return 8080
 
     def transform_request(self, request: Dict[str, Any], api_type: str) -> Dict[str, Any]:
         """转换请求格式"""
@@ -260,16 +280,20 @@ class VLLMAdapter(BaseEngineAdapter):
         metrics = {
             "num_requests_running": None,
             "num_requests_waiting": None,
+            "tokens_generated_total": None,
+            "prompt_tokens_processed_total": None,
             "time_to_first_token_seconds": None,
-            "generation_tokens_total": None,
+            "avg_generation_tokens_per_second": None,
             "raw_metrics": {}
         }
 
         patterns = {
-            "num_requests_running": r'vllm:num_requests_running\{[^}]*\}\s+([\d.]+)',
-            "num_requests_waiting": r'vllm:num_requests_waiting\{[^}]*\}\s+([\d.]+)',
-            "time_to_first_token_seconds": r'vllm:time_to_first_token_seconds\{[^}]*\}\s+([\d.]+)',
-            "generation_tokens_total": r'vllm:generation_tokens_total\{[^}]*\}\s+([\d.]+)'
+            "num_requests_running": r'llama:num_requests_running\{[^}]*\}\s+([\d.]+)',
+            "num_requests_waiting": r'llama:num_requests_waiting\{[^}]*\}\s+([\d.]+)',
+            "tokens_generated_total": r'llama:tokens_generated_total\{[^}]*\}\s+([\d.]+)',
+            "prompt_tokens_processed_total": r'llama:prompt_tokens_processed_total\{[^}]*\}\s+([\d.]+)',
+            "time_to_first_token_seconds": r'llama:time_to_first_token_seconds\{[^}]*\}\s+([\d.]+)',
+            "avg_generation_tokens_per_second": r'llama:avg_generation_tokens_per_second\{[^}]*\}\s+([\d.]+)'
         }
 
         for key, pattern in patterns.items():

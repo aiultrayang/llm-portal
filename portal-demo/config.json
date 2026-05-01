@@ -1,0 +1,86 @@
+{
+  "portal": {
+    "title": "我的工具门户",
+    "tagline": "发现 · 探索 · 创造",
+    "version": "1.0.0"
+  },
+  "categories": [
+    { "id": "ai", "name": "AI工具", "icon": "🤖", "gradient": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" },
+    { "id": "tools", "name": "效率工具", "icon": "⚡", "gradient": "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)" },
+    { "id": "news", "name": "技术资讯", "icon": "📰", "gradient": "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)" }
+  ],
+  "systems": [
+    {
+      "id": "chatbot",
+      "name": "AI 对话助手",
+      "icon": "🤖",
+      "description": "智能对话与创作平台，支持多轮对话、文档分析、代码生成等功能，是你得力的AI助手。",
+      "category": "ai",
+      "url": "https://ai.example.com/chatbot",
+      "hot": true
+    },
+    {
+      "id": "image-gen",
+      "name": "图像生成器",
+      "icon": "🎨",
+      "description": "AI驱动的图像创作工具，输入文字描述即可生成高质量图片，支持多种风格和尺寸。",
+      "category": "ai",
+      "url": "https://ai.example.com/image-gen",
+      "hot": false
+    },
+    {
+      "id": "translator",
+      "name": "智能翻译",
+      "icon": "🌐",
+      "description": "多语言实时翻译服务，支持100+种语言互译，专业领域术语翻译更准确。",
+      "category": "ai",
+      "url": "https://ai.example.com/translator",
+      "hot": false
+    },
+    {
+      "id": "converter",
+      "name": "格式转换工具",
+      "icon": "⚡",
+      "description": "支持PDF、Word、Excel、图片等多种格式的在线转换，快速高效，无需安装软件。",
+      "category": "tools",
+      "url": "https://tools.example.com/converter",
+      "hot": false
+    },
+    {
+      "id": "dashboard",
+      "name": "数据看板",
+      "icon": "📊",
+      "description": "可视化数据分析平台，拖拽式创建仪表盘，实时监控业务指标，支持多种图表类型。",
+      "category": "tools",
+      "url": "https://tools.example.com/dashboard",
+      "hot": false
+    },
+    {
+      "id": "snippets",
+      "name": "代码片段库",
+      "icon": "💻",
+      "description": "开发代码管理工具，保存、分类、搜索常用代码片段，支持多语言语法高亮。",
+      "category": "tools",
+      "url": "https://tools.example.com/snippets",
+      "hot": false
+    },
+    {
+      "id": "tech-news",
+      "name": "IT技术资讯",
+      "icon": "📰",
+      "description": "最新科技新闻聚合，汇集国内外技术博客、行业动态，每日更新，助你紧跟技术趋势。",
+      "category": "news",
+      "url": "https://news.example.com/tech-news",
+      "hot": false
+    },
+    {
+      "id": "weekly",
+      "name": "开源周报",
+      "icon": "📝",
+      "description": "每周开源项目精选，发现GitHub热门项目、优质开源工具，附带深度解读和使用指南。",
+      "category": "news",
+      "url": "https://news.example.com/weekly",
+      "hot": false
+    }
+  ]
+}

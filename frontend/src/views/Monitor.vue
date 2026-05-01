@@ -116,7 +116,7 @@
             <div class="card-header">
               <span>请求日志</span>
               <div class="header-actions">
-                <el-button size="small" @click="refreshLogs" :loading="loading">
+                <el-button size="small" @click="loadLogs" :loading="loading">
                   <el-icon><Refresh /></el-icon>
                   刷新
                 </el-button>
@@ -144,10 +144,10 @@
                 {{ formatTime(scope.row.timestamp) }}
               </template>
             </el-table-column>
-            <el-table-column prop="requestId" label="请求ID" width="200">
+            <el-table-column prop="request_id" label="请求ID" width="200">
               <template #default="scope">
-                <el-tooltip :content="scope.row.requestId" placement="top">
-                  <span class="request-id">{{ scope.row.requestId?.substring(0, 12) }}...</span>
+                <el-tooltip :content="scope.row.request_id" placement="top">
+                  <span class="request-id">{{ scope.row.request_id?.substring(0, 12) }}...</span>
                 </el-tooltip>
               </template>
             </el-table-column>
@@ -159,20 +159,15 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="latency" label="延迟 (ms)" width="100">
+            <el-table-column prop="ttft" label="TTFT (ms)" width="100">
               <template #default="scope">
-                <span :class="{ 'high-latency': scope.row.latency > 500 }">
-                  {{ scope.row.latency }}
+                <span :class="{ 'high-latency': scope.row.ttft > 500 }">
+                  {{ scope.row.ttft || '-' }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="tokens" label="Token 数" width="100" />
-            <el-table-column prop="throughput" label="吞吐量" width="100">
-              <template #default="scope">
-                {{ scope.row.throughput }} t/s
-              </template>
-            </el-table-column>
-            <el-table-column prop="prompt" label="Prompt" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="output_length" label="Token 数" width="100" />
+            <el-table-column prop="prompt_content" label="Prompt" min-width="200" show-overflow-tooltip />
           </el-table>
 
           <div class="pagination-container">
@@ -193,7 +188,7 @@
     <!-- 日志详情对话框 -->
     <el-dialog v-model="showDetailDialog" title="请求详情" width="800px" destroy-on-close>
       <el-descriptions :column="2" border v-if="selectedLog">
-        <el-descriptions-item label="请求ID">{{ selectedLog.requestId }}</el-descriptions-item>
+        <el-descriptions-item label="请求ID">{{ selectedLog.request_id }}</el-descriptions-item>
         <el-descriptions-item label="时间">{{ formatTime(selectedLog.timestamp) }}</el-descriptions-item>
         <el-descriptions-item label="模型">{{ selectedLog.model }}</el-descriptions-item>
         <el-descriptions-item label="状态">
@@ -201,27 +196,22 @@
             {{ getStatusText(selectedLog.status) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="延迟">{{ selectedLog.latency }} ms</el-descriptions-item>
-        <el-descriptions-item label="TTFT">{{ selectedLog.ttft || 'N/A' }} ms</el-descriptions-item>
-        <el-descriptions-item label="输入 Token">{{ selectedLog.inputTokens }}</el-descriptions-item>
-        <el-descriptions-item label="输出 Token">{{ selectedLog.outputTokens }}</el-descriptions-item>
-        <el-descriptions-item label="吞吐量">{{ selectedLog.throughput }} t/s</el-descriptions-item>
-        <el-descriptions-item label="总 Token">{{ selectedLog.tokens }}</el-descriptions-item>
+        <el-descriptions-item label="延迟">{{ selectedLog.total_time?.toFixed(0) || '-' }} ms</el-descriptions-item>
+        <el-descriptions-item label="TTFT">{{ selectedLog.ttft?.toFixed(0) || '-' }} ms</el-descriptions-item>
+        <el-descriptions-item label="输入 Token">{{ selectedLog.prompt_length || 0 }}</el-descriptions-item>
+        <el-descriptions-item label="输出 Token">{{ selectedLog.output_length || 0 }}</el-descriptions-item>
+        <el-descriptions-item label="TPOT">{{ selectedLog.tpot?.toFixed(2) || '-' }} ms</el-descriptions-item>
+        <el-descriptions-item label="GPU 利用率">{{ selectedLog.gpu_util?.toFixed(1) || '-' }}%</el-descriptions-item>
       </el-descriptions>
 
       <el-divider content-position="left">请求内容</el-divider>
       <div class="content-box">
-        <pre>{{ selectedLog?.prompt }}</pre>
+        <pre>{{ selectedLog?.prompt_content || '无内容' }}</pre>
       </div>
 
       <el-divider content-position="left">响应内容</el-divider>
       <div class="content-box response">
-        <pre>{{ selectedLog?.response || '无响应内容' }}</pre>
-      </div>
-
-      <el-divider content-position="left" v-if="selectedLog?.error">错误信息</el-divider>
-      <div class="error-box" v-if="selectedLog?.error">
-        <pre>{{ selectedLog.error }}</pre>
+        <pre>{{ selectedLog?.output_content || '无响应内容' }}</pre>
       </div>
 
       <template #footer>
@@ -240,7 +230,7 @@ import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { Refresh, Search, Download, ArrowDown, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { logApi } from '../api'
+import { logApi, serviceApi } from '../api'
 
 const loading = ref(false)
 const showDetailDialog = ref(false)
@@ -249,7 +239,8 @@ const chartRef = ref()
 const chartType = ref('count')
 const chart = ref()
 
-const modelList = ref(['Qwen2.5-7B-Instruct', 'LLaMA-3-8B', 'Mistral-7B-v0.3', 'DeepSeek-Coder-6.7B'])
+// 从 API 获取模型列表
+const modelList = ref([])
 
 const filters = reactive({
   timeRange: [],
@@ -265,11 +256,11 @@ const pagination = reactive({
 })
 
 const stats = reactive({
-  totalRequests: 15420,
-  successRate: 98.5,
-  avgLatency: 125,
-  avgThroughput: 38.5,
-  totalTokens: 1250000
+  totalRequests: 0,
+  successRate: 0,
+  avgLatency: 0,
+  avgThroughput: 0,
+  totalTokens: 0
 })
 
 const logList = ref([])
@@ -304,76 +295,75 @@ const timeShortcuts = [
   }
 ]
 
+// 加载模型列表
+const loadModelList = async () => {
+  try {
+    const res = await serviceApi.list()
+    const services = res.services || []
+    // 获取所有唯一模型名
+    const models = [...new Set(services.map(s => s.model_id).filter(Boolean))]
+    modelList.value = models
+  } catch (error) {
+    console.error('Failed to load model list:', error)
+  }
+}
+
 // 加载日志列表
 const loadLogs = async () => {
   loading.value = true
   try {
     const params = {
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      ...filters
+      limit: pagination.pageSize,
+      offset: (pagination.page - 1) * pagination.pageSize,
+      model: filters.model || undefined,
+      status: filters.status || undefined,
+      request_id: filters.requestId || undefined
     }
+
+    if (filters.timeRange && filters.timeRange.length === 2) {
+      params.start_time = filters.timeRange[0]
+      params.end_time = filters.timeRange[1]
+    }
+
     const res = await logApi.requests(params)
-    logList.value = res.data?.list || res || []
-    pagination.total = res.data?.total || 0
+    logList.value = res.logs || []
+    pagination.total = res.total || 0
   } catch (error) {
-    // 模拟数据
-    logList.value = generateMockLogs()
-    pagination.total = 154
+    console.error('Failed to load logs:', error)
+    logList.value = []
+    pagination.total = 0
   } finally {
     loading.value = false
   }
 }
 
-// 生成模拟日志数据
-const generateMockLogs = () => {
-  const models = ['Qwen2.5-7B-Instruct', 'LLaMA-3-8B', 'Mistral-7B-v0.3']
-  const statuses = ['success', 'success', 'success', 'success', 'success', 'success', 'error', 'timeout']
-  const prompts = [
-    '请解释什么是机器学习？',
-    '用简单的语言说明量子计算的基本原理。',
-    '帮我写一个 Python 快速排序算法。',
-    '分析一下当前人工智能发展的趋势。',
-    '解释神经网络中的反向传播算法。'
-  ]
-  const responses = [
-    '机器学习是人工智能的一个分支...',
-    '量子计算利用量子力学原理...',
-    'def quicksort(arr): ...',
-    '当前人工智能发展呈现以下趋势...',
-    '反向传播是神经网络训练的核心算法...'
-  ]
-
-  return Array.from({ length: pagination.pageSize }, (_, i) => {
-    const idx = Math.floor(Math.random() * models.length)
-    const statusIdx = Math.floor(Math.random() * statuses.length)
-    const latency = Math.floor(Math.random() * 400 + 50)
-    const inputTokens = Math.floor(Math.random() * 100 + 20)
-    const outputTokens = Math.floor(Math.random() * 200 + 50)
-
-    return {
-      id: Date.now() - i * 60000,
-      requestId: `req-${Date.now()}-${i}`,
-      timestamp: new Date(Date.now() - i * 60000),
-      model: models[idx],
-      status: statuses[statusIdx],
-      latency,
-      ttft: Math.floor(latency * 0.3),
-      tokens: inputTokens + outputTokens,
-      inputTokens,
-      outputTokens,
-      throughput: (outputTokens / (latency / 1000)).toFixed(1),
-      prompt: prompts[Math.floor(Math.random() * prompts.length)],
-      response: responses[Math.floor(Math.random() * responses.length)],
-      error: statuses[statusIdx] === 'error' ? '连接超时' : null
+// 加载统计数据
+const loadStats = async () => {
+  try {
+    const params = {}
+    if (filters.timeRange && filters.timeRange.length === 2) {
+      params.start_time = filters.timeRange[0]
+      params.end_time = filters.timeRange[1]
     }
-  })
+
+    const res = await logApi.stats(params)
+    if (res.stats) {
+      stats.totalRequests = res.stats.total_requests || 0
+      stats.successRate = res.stats.success_rate || 0
+      stats.avgLatency = Math.round(res.stats.avg_ttft || 0)
+      stats.avgThroughput = (res.stats.avg_throughput || 0).toFixed(1)
+      stats.totalTokens = res.stats.total_tokens || 0
+    }
+  } catch (error) {
+    console.error('Failed to load stats:', error)
+  }
 }
 
 // 应用筛选
 const applyFilters = () => {
   pagination.page = 1
   loadLogs()
+  loadStats()
 }
 
 // 重置筛选
@@ -384,18 +374,19 @@ const resetFilters = () => {
   filters.requestId = ''
   pagination.page = 1
   loadLogs()
-}
-
-// 刷新日志
-const refreshLogs = () => {
-  loadLogs()
-  ElMessage.success('日志已刷新')
+  loadStats()
 }
 
 // 查看详情
-const viewDetail = (row) => {
-  selectedLog.value = row
-  showDetailDialog.value = true
+const viewDetail = async (row) => {
+  try {
+    const res = await logApi.detail(row.request_id)
+    selectedLog.value = res
+    showDetailDialog.value = true
+  } catch (error) {
+    selectedLog.value = row
+    showDetailDialog.value = true
+  }
 }
 
 // 复制详情
@@ -408,10 +399,10 @@ const copyLogDetail = () => {
 // 导出日志
 const handleExport = async (format) => {
   try {
-    await logApi.export(format, filters)
+    const res = await logApi.export(format, filters)
     ElMessage.success(`正在导出 ${format.toUpperCase()} 格式`)
   } catch (error) {
-    ElMessage.success(`已模拟导出 ${format.toUpperCase()} 格式日志`)
+    ElMessage.error('导出失败')
   }
 }
 
@@ -462,26 +453,27 @@ const initChart = () => {
 const updateChart = () => {
   if (!chart.value) return
 
-  const hours = Array.from({ length: 24 }, (_, i) => `${23 - i}:00`)
+  // 使用模拟的24小时数据（实际应该从API获取）
+  const hours = Array.from({ length: 24 }, (_, i) => `${i}:00`)
   let seriesData = []
 
   switch (chartType.value) {
     case 'count':
       seriesData = {
         name: '请求数',
-        data: Array.from({ length: 24 }, () => Math.floor(Math.random() * 500 + 200))
+        data: Array.from({ length: 24 }, () => Math.floor(Math.random() * stats.totalRequests / 24 || 10))
       }
       break
     case 'latency':
       seriesData = {
         name: '平均延迟',
-        data: Array.from({ length: 24 }, () => Math.floor(Math.random() * 100 + 80))
+        data: Array.from({ length: 24 }, () => Math.floor(stats.avgLatency * (0.8 + Math.random() * 0.4) || 50))
       }
       break
     case 'throughput':
       seriesData = {
         name: '平均吞吐量',
-        data: Array.from({ length: 24 }, () => (Math.random() * 20 + 30).toFixed(1))
+        data: Array.from({ length: 24 }, () => (stats.avgThroughput * (0.8 + Math.random() * 0.4) || 30).toFixed(1))
       }
       break
   }
@@ -490,7 +482,7 @@ const updateChart = () => {
     tooltip: { trigger: 'axis' },
     xAxis: {
       type: 'category',
-      data: hours.reverse(),
+      data: hours,
       axisLabel: { rotate: 45 }
     },
     yAxis: {
@@ -519,7 +511,9 @@ const handleResize = () => {
 }
 
 onMounted(() => {
+  loadModelList()
   loadLogs()
+  loadStats()
   initChart()
   window.addEventListener('resize', handleResize)
 })
@@ -623,18 +617,5 @@ onUnmounted(() => {
 
 .content-box.response {
   background: #ecf5ff;
-}
-
-.error-box {
-  background: #fef0f0;
-  padding: 16px;
-  border-radius: 8px;
-  color: #F56C6C;
-}
-
-.error-box pre {
-  margin: 0;
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
 }
 </style>

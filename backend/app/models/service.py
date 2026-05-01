@@ -30,6 +30,7 @@ class Service(Base):
         model_id: Foreign key reference to the model being served.
         engine: The inference engine being used (e.g., 'llama.cpp', 'vllm').
         config: Configuration parameters for the service.
+        command: The full command used to start the service.
         status: Current status of the service.
         port: Port number the service is running on.
         pid: Process ID of the service (if applicable).
@@ -47,6 +48,9 @@ class Service(Base):
     )
     engine: Mapped[str] = mapped_column(String(100), nullable=False, default="unknown")
     config: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    command: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, default=None
     )
     status: Mapped[str] = mapped_column(
@@ -73,12 +77,27 @@ class Service(Base):
         Returns:
             Dictionary representation of the service.
         """
+        import json
+        config_dict = None
+        if self.config:
+            try:
+                config_dict = json.loads(self.config)
+            except json.JSONDecodeError:
+                config_dict = self.config
+
+        # Get model name if available
+        model_name = None
+        if self.model:
+            model_name = self.model.name
+
         return {
             "id": self.id,
             "name": self.name,
             "model_id": self.model_id,
+            "model_name": model_name,
             "engine": self.engine,
-            "config": self.config,
+            "config": config_dict,
+            "command": self.command,
             "status": self.status,
             "port": self.port,
             "pid": self.pid,

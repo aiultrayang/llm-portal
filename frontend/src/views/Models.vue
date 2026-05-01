@@ -1,19 +1,53 @@
 <template>
   <div class="models-page">
-    <el-card>
+    <!-- 模型扫描路径配置 -->
+    <el-card class="scan-path-card">
       <template #header>
         <div class="card-header">
-          <span>模型管理</span>
+          <span>模型扫描路径</span>
           <div class="header-actions">
-            <el-button type="success" @click="handleScanModels" :loading="scanning">
-              <el-icon><Search /></el-icon>
-              扫描模型目录
-            </el-button>
-            <el-button type="primary" @click="showAddDialog = true">
+            <el-button type="primary" size="small" @click="showPathDialog = true">
               <el-icon><Plus /></el-icon>
-              添加模型
+              添加路径
+            </el-button>
+            <el-button type="success" size="small" @click="handleScanModels" :loading="scanning">
+              <el-icon><Search /></el-icon>
+              扫描模型
             </el-button>
           </div>
+        </div>
+      </template>
+
+      <div class="scan-path-list" v-if="scanPaths.length > 0">
+        <el-row :gutter="12">
+          <el-col :span="8" v-for="path in scanPaths" :key="path.id">
+            <div class="scan-path-item" :class="{ disabled: !path.enabled }">
+              <div class="path-info">
+                <el-icon size="16"><Folder /></el-icon>
+                <span class="path-text">{{ path.path }}</span>
+              </div>
+              <div class="path-actions">
+                <el-switch v-model="path.enabled" size="small" @change="togglePath(path)" />
+                <el-button type="danger" size="small" text @click="deletePath(path)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+      </div>
+      <el-empty v-else description="尚未配置扫描路径，请添加模型目录" :image-size="60" />
+    </el-card>
+
+    <!-- 模型列表 -->
+    <el-card style="margin-top: 16px;">
+      <template #header>
+        <div class="card-header">
+          <span>模型列表</span>
+          <el-button type="primary" @click="showAddDialog = true">
+            <el-icon><Plus /></el-icon>
+            手动添加
+          </el-button>
         </div>
       </template>
 
@@ -37,16 +71,15 @@
             <el-tag size="small">{{ scope.row.format || 'GGUF' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="engines" label="支持引擎" width="180">
+        <el-table-column prop="supported_engines" label="支持引擎" width="180">
           <template #default="scope">
             <div class="engine-tags">
-              <el-tag v-for="engine in scope.row.engines" :key="engine" size="small" type="info" class="engine-tag">
+              <el-tag v-for="engine in scope.row.supported_engines" :key="engine" size="small" type="info" class="engine-tag">
                 {{ engine }}
               </el-tag>
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="params" label="参数量" width="100" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="scope">
             <el-button
@@ -61,41 +94,88 @@
       </el-table>
     </el-card>
 
-    <!-- 添加模型对话框 -->
-    <el-dialog v-model="showAddDialog" title="添加新模型" width="600px">
+    <!-- 添加扫描路径对话框 -->
+    <el-dialog v-model="showPathDialog" title="添加模型扫描路径" width="600px" destroy-on-close>
+      <div class="path-browser">
+        <!-- 当前路径显示 -->
+        <div class="current-path">
+          <span class="path-label">当前目录：</span>
+          <el-input v-model="currentBrowsePath" readonly>
+            <template #append>
+              <el-button @click="goToParent" :disabled="!browseData.parent_path">
+                <el-icon><ArrowUp /></el-icon>
+              </el-button>
+            </template>
+          </el-input>
+        </div>
+
+        <!-- 目录浏览区域 -->
+        <div class="directory-list" v-loading="browsing">
+          <div
+            v-for="item in browseData.items"
+            :key="item.path"
+            class="directory-item"
+            :class="{
+              is_model: item.is_model,
+              is_dir: item.is_dir,
+              selected: selectedPath === item.path
+            }"
+            @click="handleItemClick(item)"
+            @dblclick="handleItemDblClick(item)"
+          >
+            <el-icon v-if="item.is_dir"><Folder /></el-icon>
+            <el-icon v-else><Document /></el-icon>
+            <span class="item-name">{{ item.name }}</span>
+            <el-tag v-if="item.is_model" type="success" size="small">模型</el-tag>
+            <el-icon v-if="selectedPath === item.path" class="check-icon"><Check /></el-icon>
+          </div>
+          <el-empty v-if="browseData.items.length === 0" description="空目录" :image-size="40" />
+        </div>
+
+        <!-- 选中的路径 -->
+        <div class="selected-path" v-if="selectedPath">
+          <span class="path-label">选中路径：</span>
+          <el-input v-model="selectedPath" readonly />
+          <el-input
+            v-model="pathDescription"
+            placeholder="添加描述（可选）"
+            style="margin-top: 8px;"
+          />
+        </div>
+
+        <!-- 快捷操作 -->
+        <div class="quick-actions">
+          <el-button size="small" @click="selectCurrentPath">
+            <el-icon><Folder /></el-icon>
+            选择当前目录
+          </el-button>
+          <span class="hint">单击选中，双击进入目录</span>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="showPathDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmAddPath" :disabled="!selectedPath" :loading="addingPath">
+          确认添加
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 手动添加模型对话框 -->
+    <el-dialog v-model="showAddDialog" title="手动添加模型" width="600px">
       <el-form :model="addModelForm" label-width="100px" :rules="addModelRules" ref="addModelFormRef">
         <el-form-item label="模型名称" prop="name">
-          <el-input v-model="addModelForm.name" placeholder="输入模型名称，如 Qwen2.5-7B-Instruct" />
+          <el-input v-model="addModelForm.name" placeholder="输入模型名称" />
         </el-form-item>
         <el-form-item label="文件路径" prop="path">
           <el-input v-model="addModelForm.path" placeholder="输入模型文件的完整路径" />
-          <div class="form-tip">支持 GGUF、PyTorch、SafeTensors 等格式</div>
         </el-form-item>
-        <el-form-item label="引擎类型" prop="engine">
-          <el-select v-model="addModelForm.engine" placeholder="选择推理引擎">
-            <el-option label="llama.cpp" value="llamacpp" />
-            <el-option label="vLLM" value="vllm" />
-            <el-option label="Ollama" value="ollama" />
-            <el-option label="TensorRT-LLM" value="tensorrt" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="参数量">
-          <el-select v-model="addModelForm.params" placeholder="选择参数量" clearable>
-            <el-option label="7B" value="7B" />
-            <el-option label="8B" value="8B" />
-            <el-option label="13B" value="13B" />
-            <el-option label="14B" value="14B" />
-            <el-option label="32B" value="32B" />
-            <el-option label="70B" value="70B" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="量化方式">
-          <el-select v-model="addModelForm.quantization" placeholder="选择量化方式" clearable>
-            <el-option label="FP16" value="fp16" />
-            <el-option label="Q4_K_M" value="q4_k_m" />
-            <el-option label="Q5_K_M" value="q5_k_m" />
-            <el-option label="Q6_K" value="q6_k" />
-            <el-option label="Q8_0" value="q8_0" />
+        <el-form-item label="模型格式">
+          <el-select v-model="addModelForm.format" placeholder="自动检测">
+            <el-option label="自动检测" value="unknown" />
+            <el-option label="GGUF" value="gguf" />
+            <el-option label="SafeTensors" value="safetensors" />
+            <el-option label="PyTorch" value="pytorch" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -110,7 +190,7 @@
       <div class="delete-warning">
         <el-icon size="48" color="#F56C6C"><WarningFilled /></el-icon>
         <p>确定要删除模型 <strong>{{ modelToDelete?.name }}</strong> 吗？</p>
-        <p class="warning-text">此操作将从数据库中移除模型记录，但不会删除实际文件。</p>
+        <p class="warning-text">此操作仅删除数据库记录，不会删除实际文件。</p>
       </div>
       <template #footer>
         <el-button @click="showDeleteDialog = false">取消</el-button>
@@ -121,34 +201,53 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
-import { Plus, Search, Document, WarningFilled } from '@element-plus/icons-vue'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { Plus, Search, Document, Folder, Delete, ArrowUp, WarningFilled, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { modelApi } from '../api'
+import axios from 'axios'
+
+const API_BASE = 'http://192.168.31.24:8606'
 
 const loading = ref(false)
 const scanning = ref(false)
 const adding = ref(false)
 const deleting = ref(false)
+const browsing = ref(false)
+const addingPath = ref(false)
+const showPathDialog = ref(false)
 const showAddDialog = ref(false)
 const showDeleteDialog = ref(false)
 const modelToDelete = ref(null)
 const addModelFormRef = ref()
 
 const modelList = ref([])
+const scanPaths = ref([])
+const browseData = ref({ current_path: '/', parent_path: null, items: [] })
+const currentBrowsePath = ref('/')
+const selectedPath = ref('')
+const pathDescription = ref('')
 
 const addModelForm = reactive({
   name: '',
   path: '',
-  engine: 'llamacpp',
-  params: '',
-  quantization: ''
+  format: 'unknown'
 })
 
 const addModelRules = {
   name: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
-  path: [{ required: true, message: '请输入模型路径', trigger: 'blur' }],
-  engine: [{ required: true, message: '请选择引擎类型', trigger: 'change' }]
+  path: [{ required: true, message: '请输入模型路径', trigger: 'blur' }]
+}
+
+// 加载扫描路径列表
+const loadScanPaths = async () => {
+  try {
+    const res = await axios.get(`${API_BASE}/api/config/scan-paths`)
+    scanPaths.value = res.data || []
+  } catch (error) {
+    console.error('加载扫描路径失败:', error)
+    scanPaths.value = []
+  }
 }
 
 // 加载模型列表
@@ -156,45 +255,134 @@ const loadModels = async () => {
   loading.value = true
   try {
     const res = await modelApi.list()
-    modelList.value = res.data || res || []
+    modelList.value = res || []
   } catch (error) {
-    // 使用模拟数据
-    modelList.value = [
-      { id: 1, name: 'Qwen2.5-7B-Instruct', path: '/models/qwen2.5-7b-instruct-q4_k_m.gguf', size: 4362778112, format: 'GGUF', engines: ['llama.cpp', 'Ollama'], params: '7B', quantization: 'Q4_K_M' },
-      { id: 2, name: 'LLaMA-3-8B', path: '/models/llama-3-8b-q5_k_m.gguf', size: 5734416384, format: 'GGUF', engines: ['llama.cpp', 'vLLM', 'Ollama'], params: '8B', quantization: 'Q5_K_M' },
-      { id: 3, name: 'Mistral-7B-v0.3', path: '/models/mistral-7b-v0.3-q4_k_m.gguf', size: 4135678976, format: 'GGUF', engines: ['llama.cpp', 'vLLM'], params: '7B', quantization: 'Q4_K_M' },
-      { id: 4, name: 'DeepSeek-Coder-6.7B', path: '/models/deepseek-coder-6.7b.gguf', size: 3890635264, format: 'GGUF', engines: ['llama.cpp', 'Ollama'], params: '6.7B', quantization: 'Q4_K_M' }
-    ]
+    console.error('加载模型列表失败:', error)
+    modelList.value = []
   } finally {
     loading.value = false
   }
 }
 
-// 扫描模型目录
+// 浏览目录
+const browseDirectory = async (path) => {
+  browsing.value = true
+  try {
+    const res = await axios.get(`${API_BASE}/api/config/browse`, {
+      params: { path }
+    })
+    browseData.value = res.data
+    currentBrowsePath.value = res.data.current_path
+  } catch (error) {
+    ElMessage.error(`无法浏览目录: ${error.response?.data?.detail || error.message}`)
+  } finally {
+    browsing.value = false
+  }
+}
+
+// 点击目录项 - 选中
+const handleItemClick = (item) => {
+  // 单击选中该路径
+  selectedPath.value = item.path
+}
+
+// 双击目录项 - 进入目录
+const handleItemDblClick = (item) => {
+  if (item.is_dir) {
+    browseDirectory(item.path)
+    selectedPath.value = '' // 清除选中，等待新选择
+  }
+}
+
+// 返回上级目录
+const goToParent = () => {
+  if (browseData.value.parent_path) {
+    browseDirectory(browseData.value.parent_path)
+  }
+}
+
+// 选中当前目录作为扫描路径
+const selectCurrentPath = () => {
+  selectedPath.value = currentBrowsePath.value
+}
+
+// 确认添加扫描路径
+const confirmAddPath = async () => {
+  if (!selectedPath.value) return
+
+  addingPath.value = true
+  try {
+    await axios.post(`${API_BASE}/api/config/scan-paths`, {
+      path: selectedPath.value,
+      description: pathDescription.value
+    })
+    ElMessage.success('扫描路径添加成功')
+    showPathDialog.value = false
+    selectedPath.value = ''
+    pathDescription.value = ''
+    await loadScanPaths()
+  } catch (error) {
+    ElMessage.error(`添加失败: ${error.response?.data?.detail || error.message}`)
+  } finally {
+    addingPath.value = false
+  }
+}
+
+// 切换路径启用状态
+const togglePath = async (path) => {
+  try {
+    await axios.patch(`${API_BASE}/api/config/scan-paths/${path.id}/toggle`)
+    ElMessage.success(path.enabled ? '路径已启用' : '路径已禁用')
+  } catch (error) {
+    ElMessage.error('操作失败')
+    path.enabled = !path.enabled // 恢复原状态
+  }
+}
+
+// 删除扫描路径
+const deletePath = async (path) => {
+  try {
+    await axios.delete(`${API_BASE}/api/config/scan-paths/${path.id}`)
+    ElMessage.success('路径已删除')
+    await loadScanPaths()
+  } catch (error) {
+    ElMessage.error('删除失败')
+  }
+}
+
+// 扫描模型
 const handleScanModels = async () => {
   scanning.value = true
   try {
-    await modelApi.scan()
-    ElMessage.success('模型扫描完成')
-    await loadModels()
+    const res = await modelApi.scan()
+    const discovered = res || []
+    if (discovered.length > 0) {
+      ElMessage.success(`发现 ${discovered.length} 个模型`)
+      // 自动添加发现的模型
+      for (const model of discovered) {
+        try {
+          await modelApi.add({
+            name: model.name,
+            path: model.path,
+            format: model.format,
+            size: model.size
+          })
+        } catch (e) {
+          // 可能已存在，忽略
+        }
+      }
+      await loadModels()
+    } else {
+      ElMessage.info('未发现新模型')
+    }
   } catch (error) {
-    ElMessage.info('扫描功能模拟执行，已添加2个新模型')
-    modelList.value.push({
-      id: 5,
-      name: 'Phi-3-mini-4k',
-      path: '/models/phi-3-mini-4k.gguf',
-      size: 2362778112,
-      format: 'GGUF',
-      engines: ['llama.cpp', 'Ollama'],
-      params: '3.8B',
-      quantization: 'Q4_K_M'
-    })
+    ElMessage.error('扫描失败')
   } finally {
     scanning.value = false
   }
 }
 
-// 添加模型
+// 手动添加模型
 const handleAddModel = async () => {
   try {
     await addModelFormRef.value.validate()
@@ -206,28 +394,14 @@ const handleAddModel = async () => {
     await loadModels()
   } catch (error) {
     if (error !== false) {
-      // 模拟添加成功
-      const newModel = {
-        id: Date.now(),
-        name: addModelForm.name,
-        path: addModelForm.path,
-        size: 5000000000,
-        format: 'GGUF',
-        engines: [addModelForm.engine],
-        params: addModelForm.params || 'Unknown',
-        quantization: addModelForm.quantization || 'Unknown'
-      }
-      modelList.value.push(newModel)
-      ElMessage.success('模型添加成功')
-      showAddDialog.value = false
-      resetAddForm()
+      ElMessage.error(`添加失败: ${error.response?.data?.detail || error.message}`)
     }
   } finally {
     adding.value = false
   }
 }
 
-// 确认删除
+// 确认删除模型
 const confirmDelete = (model) => {
   modelToDelete.value = model
   showDeleteDialog.value = true
@@ -242,11 +416,7 @@ const handleDeleteModel = async () => {
     ElMessage.success('模型已删除')
     await loadModels()
   } catch (error) {
-    const index = modelList.value.findIndex(m => m.id === modelToDelete.value.id)
-    if (index > -1) {
-      modelList.value.splice(index, 1)
-    }
-    ElMessage.success('模型已删除')
+    ElMessage.error('删除失败')
   } finally {
     deleting.value = false
     showDeleteDialog.value = false
@@ -258,9 +428,7 @@ const handleDeleteModel = async () => {
 const resetAddForm = () => {
   addModelForm.name = ''
   addModelForm.path = ''
-  addModelForm.engine = 'llamacpp'
-  addModelForm.params = ''
-  addModelForm.quantization = ''
+  addModelForm.format = 'unknown'
 }
 
 // 格式化文件大小
@@ -274,8 +442,21 @@ const formatSize = (bytes) => {
   return `${mb.toFixed(2)} MB`
 }
 
+// 打开路径对话框时初始化浏览
+const initBrowse = () => {
+  browseDirectory('/')
+}
+
 onMounted(() => {
+  loadScanPaths()
   loadModels()
+})
+
+// 监听对话框打开
+watch(showPathDialog, (val) => {
+  if (val) {
+    initBrowse()
+  }
 })
 </script>
 
@@ -289,6 +470,47 @@ onMounted(() => {
 .header-actions {
   display: flex;
   gap: 12px;
+}
+
+.scan-path-card {
+  margin-bottom: 16px;
+}
+
+.scan-path-list {
+  padding: 8px 0;
+}
+
+.scan-path-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: #f5f7fa;
+}
+
+.scan-path-item.disabled {
+  opacity: 0.6;
+  background: #fafafa;
+}
+
+.path-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.path-text {
+  font-size: 14px;
+  color: #303133;
+}
+
+.path-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .model-name {
@@ -307,10 +529,87 @@ onMounted(() => {
   margin: 2px;
 }
 
-.form-tip {
+/* 路径浏览器样式 */
+.path-browser {
+  padding: 16px 0;
+}
+
+.current-path {
+  margin-bottom: 16px;
+}
+
+.path-label {
+  font-size: 14px;
+  color: #606266;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.directory-list {
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.directory-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.directory-item:hover {
+  background: #f0f2f5;
+}
+
+.directory-item.is_dir {
+  color: #409eff;
+}
+
+.directory-item.is_model {
+  background: #f0f9eb;
+}
+
+.directory-item.is_model:hover {
+  background: #e1f3d8;
+}
+
+.item-name {
+  flex: 1;
+}
+
+.selected-path {
+  margin-top: 16px;
+  padding: 12px;
+  background: #ecf5ff;
+  border-radius: 8px;
+}
+
+.quick-actions {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hint {
   font-size: 12px;
   color: #909399;
-  margin-top: 4px;
+}
+
+.directory-item.selected {
+  background: #ecf5ff;
+  border: 1px solid #409eff;
+}
+
+.check-icon {
+  color: #409eff;
+  margin-left: auto;
 }
 
 .delete-warning {

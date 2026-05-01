@@ -47,7 +47,7 @@ def init_db() -> None:
     This should be called once when the application starts.
     """
     # Import all models to ensure they are registered
-    from app.models import model, service, benchmark, log  # noqa: F401
+    from app.models import model, service, benchmark, log, config  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 

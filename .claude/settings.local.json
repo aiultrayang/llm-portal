@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sshpass -p '111111' ssh -o StrictHostKeyChecking=no work@192.168.31.24 \"nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv && echo '---SEPARATOR---' && cat /etc/os-release | head -5 && echo '---SEPARATOR---' && free -h && echo '---SEPARATOR---' && df -h / && echo '---SEPARATOR---' && python3 --version 2>/dev/null || echo 'Python未安装' && echo '---SEPARATOR---' && docker --version 2>/dev/null || echo 'Docker未安装'\")",
+      "Bash(rm -rf .git)",
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(PYTHONPATH=/Users/app/ai/claude-projects/backend /Users/app/Library/Python/3.9/bin/pytest tests/test_models.py -v)",
+      "Bash(curl -s http://192.168.31.24:8606/health)",
+      "Bash(curl -s http://192.168.31.24:8606/)",
+      "Bash(curl -s http://192.168.31.24:6300/)",
+      "Bash(curl -s http://192.168.31.24:8606/api/system/gpu)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://192.168.31.24:8606/api/services)",
+      "Bash(curl -s http://192.168.31.24:8606/api/services/params/llamacpp)",
+      "Bash(curl -s http://192.168.31.24:8606/api/services/engines/llamacpp/params)",
+      "Bash(curl -s http://192.168.31.24:8606/api/models)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(curl -s -X POST http://192.168.31.24:8606/api/services -H 'Content-Type: application/json' -d '{\"name\":\"test-service\",\"engine\":\"llamacpp\",\"model_id\":20,\"config\":{\"n_ctx\":4096}}')",
+      "Bash(curl -s -X POST http://192.168.31.24:8606/api/services -H 'Content-Type: application/json' -d '{\"name\":\"test-service\",\"engine\":\"llamacpp\",\"model_id\":20,\"config\":{\"n_ctx\":4096,\"port\":8080}}')",
+      "Bash(curl -s -X POST http://192.168.31.24:8606/api/services -H 'Content-Type: application/json' -d '{\"name\":\"test-llamacpp\",\"engine\":\"llamacpp\",\"model_id\":20,\"config\":{\"n_ctx\":4096,\"port\":8088}}')",
+      "Bash(curl -s -X POST http://192.168.31.24:8606/api/services/3/start)",
+      "Bash(curl -s -X POST http://192.168.31.24:8606/api/services/3/stop)",
+      "Bash(curl -s -X POST http://192.168.31.24:8606/api/services -H 'Content-Type: application/json' -d '{\"name\":\"glm-flash-service\",\"engine\":\"llamacpp\",\"model_id\":20,\"config\":{\"n_ctx\":8192,\"n_gpu_layers\":35,\"port\":8090}}')",
+      "Bash(curl -s -X DELETE http://192.168.31.24:8606/api/services/1)",
+      "Bash(curl -s -X POST http://192.168.31.24:8606/api/services -H 'Content-Type: application/json' -d '{\"name\":\"glm-flash-service\",\"engine\":\"llamacpp\",\"model_id\":20,\"config\":{\"n_ctx\":8192,\"n_gpu_layers\":35,\"port\":8091}}')",
+      "Bash(curl -s http://192.168.31.24:8091/health)",
+      "Bash(curl -s -X GET \"http://192.168.31.24:8606/api/services/1/status\")"
+    ]
+  }
+}
