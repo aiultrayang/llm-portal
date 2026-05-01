@@ -10,11 +10,11 @@
 
           <el-form :model="benchmarkConfig" label-width="100px" :rules="configRules" ref="configFormRef">
             <el-form-item label="选择服务" prop="serviceId">
-              <el-select v-model="benchmarkConfig.serviceId" placeholder="选择要测试的服务">
+              <el-select v-model="benchmarkConfig.serviceId" placeholder="选择要测试的服务" style="width: 100%;">
                 <el-option
                   v-for="service in runningServices"
                   :key="service.id"
-                  :label="service.name"
+                  :label="service.model_name || service.name"
                   :value="service.id"
                 />
               </el-select>
@@ -23,42 +23,35 @@
             <el-divider content-position="left">Token 范围配置</el-divider>
 
             <el-form-item label="起始 Token">
-              <el-input-number v-model="benchmarkConfig.tokenStart" :min="1" :max="4096" />
+              <el-input-number v-model="benchmarkConfig.prompt_tokens_start" :min="128" :max="16384" :step="128" style="width: 100%;" />
             </el-form-item>
 
             <el-form-item label="结束 Token">
-              <el-input-number v-model="benchmarkConfig.tokenEnd" :min="1" :max="4096" />
+              <el-input-number v-model="benchmarkConfig.prompt_tokens_end" :min="128" :max="16384" :step="128" style="width: 100%;" />
             </el-form-item>
 
             <el-form-item label="Token 步长">
-              <el-input-number v-model="benchmarkConfig.tokenStep" :min="1" :max="512" />
+              <el-input-number v-model="benchmarkConfig.prompt_tokens_step" :min="128" :max="2048" :step="128" style="width: 100%;" />
             </el-form-item>
 
             <el-divider content-position="left">并发配置</el-divider>
 
-            <el-form-item label="并发数范围">
-              <el-row :gutter="10">
-                <el-col :span="12">
-                  <el-input-number v-model="benchmarkConfig.concurrencyStart" :min="1" :max="100" size="small" />
-                </el-col>
-                <el-col :span="12">
-                  <el-input-number v-model="benchmarkConfig.concurrencyEnd" :min="1" :max="100" size="small" />
-                </el-col>
-              </el-row>
+            <el-form-item label="并发数">
+              <el-input-number v-model="benchmarkConfig.concurrent" :min="1" :max="64" style="width: 100%;" />
             </el-form-item>
 
-            <el-divider content-position="left">请求配置</el-divider>
-
-            <el-form-item label="请求数">
-              <el-input-number v-model="benchmarkConfig.totalRequests" :min="1" :max="1000" />
+            <el-form-item label="每点请求数">
+              <el-input-number v-model="benchmarkConfig.requests_per_point" :min="1" :max="100" style="width: 100%;" />
             </el-form-item>
 
-            <el-form-item label="预热请求">
-              <el-input-number v-model="benchmarkConfig.warmupRequests" :min="0" :max="100" />
-            </el-form-item>
+            <el-divider content-position="left">输出配置</el-divider>
 
             <el-form-item label="输出 Token">
-              <el-input-number v-model="benchmarkConfig.outputTokens" :min="16" :max="2048" />
+              <el-input-number v-model="benchmarkConfig.max_tokens" :min="16" :max="2048" style="width: 100%;" />
+            </el-form-item>
+
+            <el-form-item label="流式输出">
+              <el-switch v-model="benchmarkConfig.stream" />
             </el-form-item>
 
             <el-form-item>
@@ -96,8 +89,7 @@
             :stroke-width="20"
           />
           <div class="progress-info">
-            <span>已完成: {{ completedRequests }}/{{ benchmarkConfig.totalRequests }}</span>
-            <span>当前并发: {{ currentConcurrency }}</span>
+            <span>当前步骤: {{ currentStep }}</span>
           </div>
         </el-card>
 
@@ -117,25 +109,25 @@
             <el-col :span="6">
               <div class="result-item">
                 <div class="result-label">吞吐量 (TPS)</div>
-                <div class="result-value highlight">{{ latestResult.throughput }}</div>
+                <div class="result-value highlight">{{ latestResult.summary?.throughput?.toFixed(1) || '-' }}</div>
               </div>
             </el-col>
             <el-col :span="6">
               <div class="result-item">
                 <div class="result-label">平均延迟</div>
-                <div class="result-value">{{ latestResult.avgLatency }} ms</div>
+                <div class="result-value">{{ latestResult.summary?.avg_latency?.toFixed(0) || '-' }} ms</div>
               </div>
             </el-col>
             <el-col :span="6">
               <div class="result-item">
                 <div class="result-label">TTFT</div>
-                <div class="result-value">{{ latestResult.ttft }} ms</div>
+                <div class="result-value">{{ latestResult.summary?.avg_ttft?.toFixed(0) || '-' }} ms</div>
               </div>
             </el-col>
             <el-col :span="6">
               <div class="result-item">
                 <div class="result-label">TPOT</div>
-                <div class="result-value">{{ latestResult.tpot }} ms</div>
+                <div class="result-value">{{ latestResult.summary?.avg_tpot?.toFixed(1) || '-' }} ms</div>
               </div>
             </el-col>
           </el-row>
@@ -144,32 +136,32 @@
             <el-col :span="6">
               <div class="result-item">
                 <div class="result-label">成功率</div>
-                <div class="result-value success">{{ latestResult.successRate }}%</div>
+                <div class="result-value success">{{ latestResult.summary?.success_rate?.toFixed(1) || 100 }}%</div>
               </div>
             </el-col>
             <el-col :span="6">
               <div class="result-item">
                 <div class="result-label">总请求数</div>
-                <div class="result-value">{{ latestResult.totalRequests }}</div>
+                <div class="result-value">{{ latestResult.summary?.total_requests || 0 }}</div>
               </div>
             </el-col>
             <el-col :span="6">
               <div class="result-item">
                 <div class="result-label">总 Token</div>
-                <div class="result-value">{{ latestResult.totalTokens }}</div>
+                <div class="result-value">{{ latestResult.summary?.total_tokens || 0 }}</div>
               </div>
             </el-col>
             <el-col :span="6">
               <div class="result-item">
                 <div class="result-label">测试时长</div>
-                <div class="result-value">{{ latestResult.duration }}s</div>
+                <div class="result-value">{{ latestResult.summary?.duration?.toFixed(1) || 0 }}s</div>
               </div>
             </el-col>
           </el-row>
         </el-card>
 
         <!-- 性能图表 -->
-        <el-card v-if="latestResult" class="chart-card">
+        <el-card v-if="latestResult && latestResult.results" class="chart-card">
           <template #header>
             <span>性能曲线</span>
           </template>
@@ -180,8 +172,27 @@
             <el-tab-pane label="TTFT/TPOT 曲线" name="latency">
               <div ref="latencyChartRef" style="height: 300px;"></div>
             </el-tab-pane>
-            <el-tab-pane label="并发对比" name="concurrency">
-              <div ref="concurrencyChartRef" style="height: 300px;"></div>
+            <el-tab-pane label="详细数据" name="data">
+              <el-table :data="latestResult.results" style="width: 100%" max-height="300">
+                <el-table-column prop="prompt_tokens" label="输入Token" width="100" />
+                <el-table-column prop="throughput" label="吞吐量(t/s)" width="120">
+                  <template #default="scope">
+                    {{ scope.row.throughput?.toFixed(2) }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="ttft" label="TTFT(ms)" width="100">
+                  <template #default="scope">
+                    {{ scope.row.ttft?.toFixed(0) }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="tpot" label="TPOT(ms)" width="100">
+                  <template #default="scope">
+                    {{ scope.row.tpot?.toFixed(2) }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="success_count" label="成功数" width="80" />
+                <el-table-column prop="error_count" label="失败数" width="80" />
+              </el-table>
             </el-tab-pane>
           </el-tabs>
         </el-card>
@@ -198,19 +209,30 @@
             </div>
           </template>
           <el-table :data="benchmarkHistory" style="width: 100%">
-            <el-table-column prop="time" label="测试时间" width="180" />
-            <el-table-column prop="service" label="服务" width="150" />
-            <el-table-column prop="throughput" label="吞吐量 (TPS)" width="120">
+            <el-table-column prop="created_at" label="测试时间" width="180">
               <template #default="scope">
-                <span class="highlight">{{ scope.row.throughput }}</span>
+                {{ formatTime(scope.row.created_at) }}
               </template>
             </el-table-column>
-            <el-table-column prop="avgLatency" label="平均延迟 (ms)" width="120" />
-            <el-table-column prop="ttft" label="TTFT (ms)" width="100" />
-            <el-table-column prop="successRate" label="成功率" width="100">
+            <el-table-column prop="config" label="配置" width="200">
               <template #default="scope">
-                <el-tag :type="scope.row.successRate >= 95 ? 'success' : 'warning'" size="small">
-                  {{ scope.row.successRate }}%
+                {{ scope.row.config?.model || 'Unknown' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="summary" label="吞吐量 (TPS)" width="120">
+              <template #default="scope">
+                <span class="highlight">{{ scope.row.summary?.throughput?.toFixed(1) || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="summary" label="平均延迟 (ms)" width="120">
+              <template #default="scope">
+                {{ scope.row.summary?.avg_latency?.toFixed(0) || '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="summary" label="成功率" width="100">
+              <template #default="scope">
+                <el-tag :type="(scope.row.summary?.success_rate || 100) >= 95 ? 'success' : 'warning'" size="small">
+                  {{ scope.row.summary?.success_rate?.toFixed(0) || 100 }}%
                 </el-tag>
               </template>
             </el-table-column>
@@ -219,7 +241,7 @@
                 <el-button type="primary" size="small" link @click="viewDetail(scope.row)">
                   查看
                 </el-button>
-                <el-button type="danger" size="small" link @click="deleteHistory(scope.row.id)">
+                <el-button type="danger" size="small" link @click="deleteHistory(scope.row.benchmark_id)">
                   删除
                 </el-button>
               </template>
@@ -232,7 +254,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { VideoPlay, VideoPause, Download, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
@@ -240,18 +262,17 @@ import { benchmarkApi, serviceApi } from '../api'
 
 const running = ref(false)
 const progress = ref(0)
-const completedRequests = ref(0)
-const currentConcurrency = ref(1)
+const currentStep = ref('')
 const activeChart = ref('throughput')
 const configFormRef = ref()
+const currentBenchmarkId = ref(null)
+let pollInterval = null
 
 const throughputChartRef = ref()
 const latencyChartRef = ref()
-const concurrencyChartRef = ref()
 
 let throughputChart = null
 let latencyChart = null
-let concurrencyChart = null
 
 const runningServices = ref([])
 const benchmarkHistory = ref([])
@@ -259,14 +280,13 @@ const latestResult = ref(null)
 
 const benchmarkConfig = ref({
   serviceId: null,
-  tokenStart: 128,
-  tokenEnd: 1024,
-  tokenStep: 128,
-  concurrencyStart: 1,
-  concurrencyEnd: 16,
-  totalRequests: 100,
-  warmupRequests: 5,
-  outputTokens: 256
+  prompt_tokens_start: 512,
+  prompt_tokens_end: 2048,
+  prompt_tokens_step: 256,
+  concurrent: 4,
+  requests_per_point: 10,
+  max_tokens: 128,
+  stream: true
 })
 
 const configRules = {
@@ -277,26 +297,22 @@ const configRules = {
 const loadServices = async () => {
   try {
     const res = await serviceApi.list()
-    runningServices.value = (res.data || res || []).filter(s => s.status === 'running')
+    const services = res.services || []
+    runningServices.value = services.filter(s => s.status === 'running')
   } catch (error) {
-    runningServices.value = [
-      { id: 1, name: 'qwen-service', status: 'running' },
-      { id: 2, name: 'llama-service', status: 'running' }
-    ]
+    console.error('Failed to load services:', error)
+    runningServices.value = []
   }
 }
 
 // 加载历史记录
 const loadHistory = async () => {
   try {
-    const res = await benchmarkApi.history()
-    benchmarkHistory.value = res.data || res || []
+    const res = await benchmarkApi.history(20)
+    benchmarkHistory.value = res.history || []
   } catch (error) {
-    benchmarkHistory.value = [
-      { id: 1, time: '2025-04-30 10:30:00', service: 'qwen-service', throughput: 42.5, avgLatency: 85, ttft: 45, successRate: 99 },
-      { id: 2, time: '2025-04-30 09:15:00', service: 'llama-service', throughput: 38.2, avgLatency: 92, ttft: 52, successRate: 98 },
-      { id: 3, time: '2025-04-29 16:45:00', service: 'qwen-service', throughput: 40.1, avgLatency: 88, ttft: 48, successRate: 97 }
-    ]
+    console.error('Failed to load history:', error)
+    benchmarkHistory.value = []
   }
 }
 
@@ -304,99 +320,88 @@ const loadHistory = async () => {
 const runBenchmark = async () => {
   try {
     await configFormRef.value.validate()
+
+    const service = runningServices.value.find(s => s.id === benchmarkConfig.value.serviceId)
+    if (!service) {
+      ElMessage.error('找不到选中的服务')
+      return
+    }
+
     running.value = true
     progress.value = 0
-    completedRequests.value = 0
+    currentStep.value = '正在启动测试...'
 
-    ElMessage.info('开始性能测试...')
+    // 构建请求配置
+    const config = {
+      target_url: `http://192.168.31.24:${service.port}`,
+      model: service.model_name || 'default',
+      prompt_tokens_start: benchmarkConfig.value.prompt_tokens_start,
+      prompt_tokens_end: benchmarkConfig.value.prompt_tokens_end,
+      prompt_tokens_step: benchmarkConfig.value.prompt_tokens_step,
+      concurrent: benchmarkConfig.value.concurrent,
+      requests_per_point: benchmarkConfig.value.requests_per_point,
+      max_tokens: benchmarkConfig.value.max_tokens,
+      stream: benchmarkConfig.value.stream
+    }
 
-    // 模拟测试进度
-    const interval = setInterval(() => {
-      if (progress.value < 100) {
-        progress.value += Math.floor(Math.random() * 5 + 1)
-        completedRequests.value = Math.floor(progress.value / 100 * benchmarkConfig.value.totalRequests)
-        currentConcurrency.value = Math.floor(Math.random() * (benchmarkConfig.value.concurrencyEnd - benchmarkConfig.value.concurrencyStart + 1) + benchmarkConfig.value.concurrencyStart)
+    const res = await benchmarkApi.run(config)
+    currentBenchmarkId.value = res.benchmark_id
 
-        if (progress.value > 100) progress.value = 100
+    ElMessage.success('测试已启动，正在收集数据...')
+
+    // 开始轮询状态
+    pollInterval = setInterval(async () => {
+      try {
+        const status = await benchmarkApi.status(currentBenchmarkId.value)
+        progress.value = Math.min(status.progress || 0, 100)
+        currentStep.value = status.current_step || '处理中...'
+
+        if (status.status === 'completed') {
+          clearInterval(pollInterval)
+          await fetchResult()
+          running.value = false
+          ElMessage.success('测试完成')
+          await loadHistory()
+        } else if (status.status === 'failed') {
+          clearInterval(pollInterval)
+          running.value = false
+          ElMessage.error(`测试失败: ${status.error || '未知错误'}`)
+        }
+      } catch (error) {
+        console.error('Failed to poll status:', error)
       }
-    }, 200)
+    }, 2000)
 
-    // 模拟测试完成
-    setTimeout(async () => {
-      clearInterval(interval)
-      progress.value = 100
-
-      // 生成结果
-      const result = {
-        id: Date.now(),
-        time: new Date().toLocaleString(),
-        service: runningServices.value.find(s => s.id === benchmarkConfig.value.serviceId)?.name || 'Unknown',
-        throughput: (Math.random() * 30 + 30).toFixed(1),
-        avgLatency: Math.floor(Math.random() * 50 + 50),
-        ttft: Math.floor(Math.random() * 30 + 30),
-        tpot: Math.floor(Math.random() * 20 + 15),
-        successRate: Math.floor(Math.random() * 5 + 95),
-        totalRequests: benchmarkConfig.value.totalRequests,
-        totalTokens: Math.floor(benchmarkConfig.value.totalRequests * benchmarkConfig.value.outputTokens),
-        duration: Math.floor(Math.random() * 60 + 30),
-        concurrencyData: generateConcurrencyData(),
-        tokenData: generateTokenData()
-      }
-
-      latestResult.value = result
-      benchmarkHistory.value.unshift({
-        id: result.id,
-        time: result.time,
-        service: result.service,
-        throughput: result.throughput,
-        avgLatency: result.avgLatency,
-        ttft: result.ttft,
-        successRate: result.successRate
-      })
-
-      running.value = false
-      ElMessage.success('测试完成')
-
-      // 更新图表
-      await nextTick()
-      updateCharts()
-    }, 3000)
   } catch (error) {
     running.value = false
+    ElMessage.error(`启动失败: ${error.response?.data?.detail || error.message}`)
+  }
+}
+
+// 获取测试结果
+const fetchResult = async () => {
+  if (!currentBenchmarkId.value) return
+
+  try {
+    const result = await benchmarkApi.result(currentBenchmarkId.value)
+    latestResult.value = result
+
+    await nextTick()
+    updateCharts()
+  } catch (error) {
+    console.error('Failed to get result:', error)
   }
 }
 
 // 停止测试
 const stopBenchmark = () => {
+  if (pollInterval) {
+    clearInterval(pollInterval)
+  }
   running.value = false
   progress.value = 0
+  currentStep.value = ''
   ElMessage.warning('测试已停止')
-}
-
-// 生成并发测试数据
-const generateConcurrencyData = () => {
-  const data = []
-  for (let c = benchmarkConfig.value.concurrencyStart; c <= benchmarkConfig.value.concurrencyEnd; c += 2) {
-    data.push({
-      concurrency: c,
-      throughput: Math.floor(Math.random() * 20 + 30),
-      latency: Math.floor(Math.random() * 50 + 50)
-    })
-  }
-  return data
-}
-
-// 生成Token测试数据
-const generateTokenData = () => {
-  const data = []
-  for (let t = benchmarkConfig.value.tokenStart; t <= benchmarkConfig.value.tokenEnd; t += benchmarkConfig.value.tokenStep) {
-    data.push({
-      tokens: t,
-      ttft: Math.floor(Math.random() * 30 + 30),
-      tpot: Math.floor(Math.random() * 20 + 10)
-    })
-  }
-  return data
 }
 
 // 初始化图表
@@ -407,23 +412,23 @@ const initCharts = () => {
   if (latencyChartRef.value) {
     latencyChart = echarts.init(latencyChartRef.value)
   }
-  if (concurrencyChartRef.value) {
-    concurrencyChart = echarts.init(concurrencyChartRef.value)
-  }
 }
 
 // 更新图表
 const updateCharts = () => {
-  if (!latestResult.value) return
+  if (!latestResult.value || !latestResult.value.results) return
+
+  const results = latestResult.value.results
+  const xData = results.map(r => r.prompt_tokens)
 
   // 吞吐量图表
-  if (throughputChart && latestResult.value.tokenData) {
+  if (throughputChart) {
     throughputChart.setOption({
       tooltip: { trigger: 'axis' },
       xAxis: {
         type: 'category',
-        data: latestResult.value.tokenData.map(d => d.tokens),
-        name: '输出 Token 数'
+        data: xData,
+        name: '输入 Token 数'
       },
       yAxis: {
         type: 'value',
@@ -433,7 +438,7 @@ const updateCharts = () => {
         name: '吞吐量',
         type: 'line',
         smooth: true,
-        data: latestResult.value.tokenData.map(d => d.throughput || Math.floor(Math.random() * 20 + 30)),
+        data: results.map(r => r.throughput?.toFixed(2) || 0),
         areaStyle: { opacity: 0.3 },
         lineStyle: { width: 3 },
         itemStyle: { color: '#409EFF' }
@@ -442,14 +447,14 @@ const updateCharts = () => {
   }
 
   // 延迟图表
-  if (latencyChart && latestResult.value.tokenData) {
+  if (latencyChart) {
     latencyChart.setOption({
       tooltip: { trigger: 'axis' },
       legend: { data: ['TTFT', 'TPOT'] },
       xAxis: {
         type: 'category',
-        data: latestResult.value.tokenData.map(d => d.tokens),
-        name: '输出 Token 数'
+        data: xData,
+        name: '输入 Token 数'
       },
       yAxis: {
         type: 'value',
@@ -460,7 +465,7 @@ const updateCharts = () => {
           name: 'TTFT',
           type: 'line',
           smooth: true,
-          data: latestResult.value.tokenData.map(d => d.ttft),
+          data: results.map(r => r.ttft?.toFixed(0) || 0),
           lineStyle: { width: 2 },
           itemStyle: { color: '#67C23A' }
         },
@@ -468,42 +473,9 @@ const updateCharts = () => {
           name: 'TPOT',
           type: 'line',
           smooth: true,
-          data: latestResult.value.tokenData.map(d => d.tpot),
+          data: results.map(r => r.tpot?.toFixed(2) || 0),
           lineStyle: { width: 2 },
           itemStyle: { color: '#E6A23C' }
-        }
-      ]
-    })
-  }
-
-  // 并发对比图表
-  if (concurrencyChart && latestResult.value.concurrencyData) {
-    concurrencyChart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['吞吐量', '延迟'] },
-      xAxis: {
-        type: 'category',
-        data: latestResult.value.concurrencyData.map(d => d.concurrency),
-        name: '并发数'
-      },
-      yAxis: [
-        { type: 'value', name: '吞吐量 (tokens/s)', position: 'left' },
-        { type: 'value', name: '延迟 (ms)', position: 'right' }
-      ],
-      series: [
-        {
-          name: '吞吐量',
-          type: 'bar',
-          data: latestResult.value.concurrencyData.map(d => d.throughput),
-          itemStyle: { color: '#409EFF' }
-        },
-        {
-          name: '延迟',
-          type: 'line',
-          yAxisIndex: 1,
-          data: latestResult.value.concurrencyData.map(d => d.latency),
-          lineStyle: { width: 2 },
-          itemStyle: { color: '#F56C6C' }
         }
       ]
     })
@@ -518,40 +490,53 @@ const exportResult = () => {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `benchmark-${latestResult.value.service}-${Date.now()}.json`
+  a.download = `benchmark-${Date.now()}.json`
   a.click()
   ElMessage.success('结果已导出')
 }
 
 // 查看详情
-const viewDetail = (row) => {
-  latestResult.value = {
-    ...row,
-    totalRequests: benchmarkConfig.value.totalRequests,
-    totalTokens: row.totalRequests * benchmarkConfig.value.outputTokens,
-    concurrencyData: generateConcurrencyData(),
-    tokenData: generateTokenData()
+const viewDetail = async (row) => {
+  try {
+    const result = await benchmarkApi.result(row.benchmark_id)
+    latestResult.value = result
+    await nextTick()
+    updateCharts()
+  } catch (error) {
+    ElMessage.error('获取详情失败')
   }
-  nextTick(() => updateCharts())
 }
 
 // 删除历史记录
 const deleteHistory = async (id) => {
   try {
     await benchmarkApi.delete(id)
-    benchmarkHistory.value = benchmarkHistory.value.filter(h => h.id !== id)
+    benchmarkHistory.value = benchmarkHistory.value.filter(h => h.benchmark_id !== id)
     ElMessage.success('记录已删除')
   } catch (error) {
-    benchmarkHistory.value = benchmarkHistory.value.filter(h => h.id !== id)
-    ElMessage.success('记录已删除')
+    ElMessage.error('删除失败')
   }
 }
 
 // 清空历史
-const clearHistory = () => {
+const clearHistory = async () => {
+  for (const item of benchmarkHistory.value) {
+    try {
+      await benchmarkApi.delete(item.benchmark_id)
+    } catch (e) {
+      // ignore
+    }
+  }
   benchmarkHistory.value = []
   latestResult.value = null
   ElMessage.info('历史已清空')
+}
+
+// 格式化时间
+const formatTime = (time) => {
+  if (!time) return ''
+  const date = new Date(time)
+  return date.toLocaleString()
 }
 
 // 监听图表切换
@@ -559,7 +544,6 @@ watch(activeChart, () => {
   nextTick(() => {
     if (throughputChart) throughputChart.resize()
     if (latencyChart) latencyChart.resize()
-    if (concurrencyChart) concurrencyChart.resize()
   })
 })
 
@@ -567,7 +551,6 @@ watch(activeChart, () => {
 const handleResize = () => {
   if (throughputChart) throughputChart.resize()
   if (latencyChart) latencyChart.resize()
-  if (concurrencyChart) concurrencyChart.resize()
 }
 
 onMounted(() => {
@@ -579,9 +562,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  if (pollInterval) clearInterval(pollInterval)
   if (throughputChart) throughputChart.dispose()
   if (latencyChart) latencyChart.dispose()
-  if (concurrencyChart) concurrencyChart.dispose()
 })
 </script>
 

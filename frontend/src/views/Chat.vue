@@ -13,17 +13,19 @@
               </el-button>
             </div>
           </template>
-          <div
-            v-for="session in sessions"
-            :key="session.id"
-            class="session-item"
-            :class="{ active: currentSession === session.id }"
-            @click="selectSession(session.id)"
-          >
-            <div class="session-title">{{ session.title }}</div>
-            <div class="session-time">{{ session.time }}</div>
+          <div class="session-scroll">
+            <div
+              v-for="session in sessions"
+              :key="session.id"
+              class="session-item"
+              :class="{ active: currentSession === session.id }"
+              @click="selectSession(session.id)"
+            >
+              <div class="session-title">{{ session.title }}</div>
+              <div class="session-time">{{ session.time }}</div>
+            </div>
+            <el-empty v-if="sessions.length === 0" description="暂无会话" :image-size="60" />
           </div>
-          <el-empty v-if="sessions.length === 0" description="暂无会话" :image-size="60" />
         </el-card>
       </el-col>
 
@@ -423,10 +425,25 @@ onMounted(() => {
 <style scoped>
 .chat-container {
   height: calc(100vh - 140px);
+  max-height: calc(100vh - 140px);
+  overflow: hidden;
 }
 
 .session-list {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-list :deep(.el-card__body) {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-scroll {
+  flex: 1;
   overflow-y: auto;
 }
 
@@ -469,10 +486,18 @@ onMounted(() => {
   flex-direction: column;
 }
 
+.chat-area :deep(.el-card__body) {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
+  min-height: 0;
 }
 
 .message {
@@ -538,6 +563,7 @@ onMounted(() => {
 .input-area {
   border-top: 1px solid #e8e8e8;
   padding-top: 16px;
+  flex-shrink: 0;
 }
 
 .selected-images {
