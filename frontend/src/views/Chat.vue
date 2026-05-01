@@ -134,6 +134,15 @@ import { ref, nextTick, onMounted } from 'vue'
 import { Plus, UserFilled, Monitor, Picture, Close } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { serviceApi } from '../api'
+import { marked } from 'marked'
+
+// 配置marked选项
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  headerIds: false,
+  mangle: false
+})
 
 const selectedModel = ref('')
 const inputText = ref('')
@@ -152,10 +161,15 @@ const selectedImages = ref([])
 const showImagePreview = ref(false)
 const previewImageUrl = ref('')
 
-// 格式化内容（支持换行）
+// 格式化内容（支持Markdown渲染）
 const formatContent = (content) => {
   if (!content) return ''
-  return content.replace(/\n/g, '<br>')
+  try {
+    return marked.parse(content)
+  } catch (e) {
+    // 如果解析失败，返回简单的换行格式
+    return content.replace(/\n/g, '<br>')
+  }
 }
 
 // 加载运行中的服务列表
@@ -620,5 +634,86 @@ onMounted(() => {
 
 .model-hint {
   margin-top: 8px;
+}
+
+/* Markdown 样式 */
+.message-text :deep(pre) {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.message-text :deep(code) {
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.message-text :deep(pre code) {
+  background: transparent;
+  padding: 0;
+}
+
+.message-text :deep(p) {
+  margin: 0 0 8px 0;
+}
+
+.message-text :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.message-text :deep(ul), .message-text :deep(ol) {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.message-text :deep(li) {
+  margin: 4px 0;
+}
+
+.message-text :deep(blockquote) {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid #ddd;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.message-text :deep(h1), .message-text :deep(h2), .message-text :deep(h3) {
+  margin: 12px 0 8px 0;
+  font-weight: 600;
+}
+
+.message-text :deep(h1) { font-size: 1.4em; }
+.message-text :deep(h2) { font-size: 1.2em; }
+.message-text :deep(h3) { font-size: 1.1em; }
+
+.message-text :deep(table) {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+
+.message-text :deep(th), .message-text :deep(td) {
+  border: 1px solid #ddd;
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.message-text :deep(th) {
+  background: rgba(0, 0, 0, 0.05);
+  font-weight: 600;
+}
+
+/* 用户消息的代码块样式调整 */
+.message.user .message-text :deep(pre) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.message.user .message-text :deep(code) {
+  background: rgba(255, 255, 255, 0.1);
 }
 </style>
