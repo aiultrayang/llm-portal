@@ -1,0 +1,38 @@
+engine: lmdeploy
+
+version_detection:
+  method: "command"
+  command: "lmdeploy --version"
+  parse_pattern: "(\\d+\\.\\d+\\.\\d+)"
+  fallback_method: "python"
+  python_command: "python -c \"import lmdeploy; print(lmdeploy.__version__)\""
+
+compatibility:
+  ">=0.12.0": "v0.12.2_params.yaml"
+  ">=0.10.0,<0.12.0": "v0.10.0_params.yaml"
+  ">=0.8.0,<0.10.0": "v0.8.0_params.yaml"
+
+changes:
+  "0.12.2":
+    added: ["max_prefill_token_num"]
+    removed: []
+    renamed: []
+    notes: "Added prefill token control"
+  "0.12.0":
+    added: ["turbomind"]
+    removed: []
+    renamed: []
+    notes: "TurboMind backend stabilization"
+  "0.10.0":
+    added: ["model_format"]
+    removed: []
+    renamed: []
+    notes: "Added model format selection"
+  "0.8.0":
+    added: ["quantization"]
+    removed: []
+    renamed: []
+    notes: "Added quantization support"
+
+default_version: "0.12.2"
+min_supported_version: "0.8.0"

@@ -1,0 +1,140 @@
+engine: llamacpp
+version: "b4500"
+
+common_params:
+  - name: model
+    type: string
+    required: true
+    group: basic
+    description: "GGUF 模型文件路径"
+  - name: model_alias
+    type: string
+    default: null
+    required: false
+    group: basic
+    description: "模型别名，用于 API 响应"
+  - name: top_k
+    type: int
+    default: 40
+    min: 0
+    max: 1000
+    group: inference
+    description: "Top-k 采样参数"
+  - name: top_p
+    type: float
+    default: 0.95
+    min: 0.0
+    max: 1.0
+    group: inference
+    description: "Top-p 采样参数"
+  - name: repeat_penalty
+    type: float
+    default: 1.1
+    min: 1.0
+    max: 2.0
+    group: inference
+    description: "重复惩罚系数"
+  - name: host
+    type: string
+    default: "0.0.0.0"
+    group: api
+    description: "服务监听地址"
+  - name: port
+    type: int
+    default: 8080
+    min: 1
+    max: 65535
+    group: api
+    description: "服务监听端口"
+  - name: timeout
+    type: int
+    default: 600
+    min: 1
+    max: 3600
+    group: api
+    description: "请求超时时间 (秒)"
+
+unique_params:
+  - name: n_gpu_layers
+    type: int
+    default: -1
+    min: -1
+    max: 999
+    group: gpu
+    description: "GPU 层数，-1 表示全部载入 GPU"
+  - name: n_ctx
+    type: int
+    default: 4096
+    min: 512
+    max: 131072
+    group: gpu
+    description: "上下文长度"
+  - name: n_batch
+    type: int
+    default: 512
+    min: 1
+    max: 16384
+    group: gpu
+    description: "批处理大小"
+  - name: n_predict
+    type: int
+    default: -1
+    min: -1
+    max: 2147483647
+    group: inference
+    description: "最大预测 token 数，-1 表示无限"
+  - name: temp
+    type: float
+    default: 0.8
+    min: 0.0
+    max: 2.0
+    group: inference
+    description: "温度参数"
+  - name: mlock
+    type: boolean
+    default: false
+    group: performance
+    description: "锁定内存防止交换"
+  - name: no_mmap
+    type: boolean
+    default: false
+    group: performance
+    description: "禁用内存映射"
+  - name: flash_attn
+    type: boolean
+    default: false
+    group: performance
+    description: "启用 Flash Attention"
+  - name: rope_scaling
+    type: string
+    default: null
+    choices: ["none", "linear", "yarn"]
+    group: advanced
+    description: "RoPE 缩放类型"
+  - name: rope_freq_base
+    type: float
+    default: 10000.0
+    min: 1000.0
+    max: 1000000.0
+    group: advanced
+    description: "RoPE 频率基数"
+  - name: threads
+    type: int
+    default: null
+    min: 1
+    max: 128
+    group: advanced
+    description: "CPU 线程数，默认自动检测"
+  - name: tensor_split
+    type: string
+    default: null
+    group: advanced
+    description: "多 GPU 张量分割比例，逗号分隔"
+
+groups:
+  basic: "基础参数"
+  gpu: "GPU 参数"
+  inference: "推理参数"
+  performance: "性能参数"
+  api: "API 参数"
+  advanced: "高级参数"

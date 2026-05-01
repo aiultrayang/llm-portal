@@ -1,0 +1,129 @@
+engine: lmdeploy
+version: "0.12.2"
+
+common_params:
+  - name: model_path
+    type: string
+    required: true
+    group: basic
+    description: "模型路径或名称"
+  - name: tokenizer_path
+    type: string
+    default: null
+    required: false
+    group: basic
+    description: "分词器路径，默认与 model_path 相同"
+  - name: dtype
+    type: string
+    default: "auto"
+    choices: ["auto", "float16", "bfloat16", "float32"]
+    group: basic
+    description: "数据类型"
+  - name: max_tokens
+    type: int
+    default: 16
+    min: 1
+    group: inference
+    description: "最大生成 token 数"
+  - name: temperature
+    type: float
+    default: 1.0
+    min: 0.0
+    max: 2.0
+    group: inference
+    description: "温度参数"
+  - name: top_p
+    type: float
+    default: 1.0
+    min: 0.0
+    max: 1.0
+    group: inference
+    description: "Top-p 采样参数"
+  - name: top_k
+    type: int
+    default: 1
+    min: 1
+    group: inference
+    description: "Top-k 采样参数"
+  - name: repetition_penalty
+    type: float
+    default: 1.0
+    min: 1.0
+    max: 2.0
+    group: inference
+    description: "重复惩罚系数"
+  - name: server_name
+    type: string
+    default: "0.0.0.0"
+    group: api
+    description: "服务监听地址"
+  - name: server_port
+    type: int
+    default: 8001
+    min: 1
+    max: 65535
+    group: api
+    description: "服务监听端口"
+  - name: api_key
+    type: string
+    default: null
+    group: api
+    description: "API 密钥"
+  - name: trust_remote_code
+    type: boolean
+    default: false
+    group: advanced
+    description: "是否信任远程代码"
+
+unique_params:
+  - name: tp
+    type: int
+    default: 1
+    min: 1
+    max: 8
+    group: gpu
+    description: "张量并行大小 (Tensor Parallel)"
+  - name: cache_max_entry_count
+    type: float
+    default: 0.8
+    min: 0.1
+    max: 1.0
+    group: gpu
+    description: "KV Cache 显存占用比例"
+  - name: session_len
+    type: int
+    default: null
+    min: 1
+    group: gpu
+    description: "会话最大长度，默认自动检测上下文长度"
+  - name: max_prefill_token_num
+    type: int
+    default: null
+    min: 1
+    group: performance
+    description: "预填充阶段最大 token 数"
+  - name: turbomind
+    type: boolean
+    default: true
+    group: performance
+    description: "启用 TurboMind 推理引擎加速"
+  - name: quantization
+    type: int
+    default: 0
+    choices: [0, 4, 8]
+    group: advanced
+    description: "量化位数 (0=不量化, 4=INT4, 8=INT8)"
+  - name: model_format
+    type: string
+    default: null
+    choices: ["hf", "llama", "awq", "gptq"]
+    group: advanced
+    description: "模型格式"
+
+groups:
+  basic: "基础参数"
+  gpu: "GPU 参数"
+  inference: "推理参数"
+  performance: "性能参数"
+  api: "API 参数"
+  advanced: "高级参数"

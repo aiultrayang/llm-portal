@@ -1,0 +1,33 @@
+engine: llamacpp
+
+version_detection:
+  method: "command"
+  command: "llama-server --version"
+  parse_pattern: "(\\d+)"
+  fallback_method: "file"
+  file_path: "llama.cpp/version.txt"
+
+compatibility:
+  ">=4500": "b4500_params.yaml"
+  ">=4000,<4500": "b4000_params.yaml"
+  ">=3500,<4000": "b3500_params.yaml"
+
+changes:
+  "4500":
+    added: ["flash_attn", "rope_scaling", "rope_freq_base"]
+    removed: []
+    renamed: []
+    notes: "Added Flash Attention and RoPE scaling"
+  "4000":
+    added: ["tensor_split"]
+    removed: []
+    renamed: []
+    notes: "Added multi-GPU tensor split"
+  "3500":
+    added: ["model_alias"]
+    removed: []
+    renamed: []
+    notes: "Added model alias support"
+
+default_version: "b4500"
+min_supported_version: "3500"

@@ -1,0 +1,33 @@
+engine: vllm
+
+version_detection:
+  method: "command"
+  command: "vllm --version"
+  parse_pattern: "(\\d+\\.\\d+\\.\\d+)"
+  fallback_method: "python"
+  python_command: "python -c \"import vllm; print(vllm.__version__)\""
+
+compatibility:
+  ">=0.16.0": "v0.16.0_params.yaml"
+  ">=0.8.0,<0.16.0": "v0.8.0_params.yaml"
+  ">=0.6.0,<0.8.0": "v0.6.0_params.yaml"
+
+changes:
+  "0.16.0":
+    added: ["enable_chunked_prefill", "kv_cache_dtype"]
+    removed: []
+    renamed: []
+    notes: "Added chunked prefill and KV cache dtype control"
+  "0.8.0":
+    added: ["enable_prefix_caching"]
+    removed: []
+    renamed: []
+    notes: "Added prefix caching support"
+  "0.6.0":
+    added: ["speculative_model"]
+    removed: []
+    renamed: []
+    notes: "Added speculative decoding support"
+
+default_version: "0.16.0"
+min_supported_version: "0.6.0"
