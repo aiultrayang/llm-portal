@@ -25,24 +25,6 @@
           </div>
           <el-empty v-if="sessions.length === 0" description="暂无会话" :image-size="60" />
         </el-card>
-
-        <!-- 模型选择 -->
-        <el-card style="margin-top: 10px;">
-          <template #header>
-            <span>当前模型</span>
-          </template>
-          <el-select v-model="selectedModel" placeholder="选择模型" style="width: 100%;" :loading="loadingModels">
-            <el-option
-              v-for="service in runningServices"
-              :key="service.id"
-              :label="service.name"
-              :value="service.id"
-            />
-          </el-select>
-          <div class="model-hint" v-if="runningServices.length === 0">
-            <el-text type="info" size="small">暂无运行中的服务，请先启动服务</el-text>
-          </div>
-        </el-card>
       </el-col>
 
       <!-- 右侧对话区 -->
@@ -61,7 +43,7 @@
                 <el-avatar v-else icon="Monitor" />
               </div>
               <div class="message-content">
-                <div class="message-text">{{ msg.content }}</div>
+                <div class="message-text" v-html="formatContent(msg.content)"></div>
                 <div class="message-meta">
                   <span class="token-count" v-if="msg.tokens">{{ msg.tokens }} tokens</span>
                   <span class="time">{{ msg.time }}</span>
@@ -81,10 +63,23 @@
               :disabled="!selectedModel"
             />
             <div class="input-actions">
-              <el-checkbox v-model="streamMode">流式输出</el-checkbox>
+              <div class="left-actions">
+                <el-select v-model="selectedModel" placeholder="选择模型" style="width: 200px;" :loading="loadingModels" size="default">
+                  <el-option
+                    v-for="service in runningServices"
+                    :key="service.id"
+                    :label="service.model_name || service.name"
+                    :value="service.id"
+                  />
+                </el-select>
+                <el-checkbox v-model="streamMode">流式输出</el-checkbox>
+              </div>
               <el-button type="primary" @click="sendMessage" :loading="sending" :disabled="!selectedModel">
                 发送 (Ctrl+Enter)
               </el-button>
+            </div>
+            <div class="model-hint" v-if="runningServices.length === 0">
+              <el-text type="warning" size="small">暂无运行中的服务，请先启动服务</el-text>
             </div>
           </div>
         </el-card>
@@ -110,6 +105,12 @@ const currentSession = ref(1)
 const sessions = ref([])
 const messages = ref([])
 const runningServices = ref([])
+
+// 格式化内容（支持换行）
+const formatContent = (content) => {
+  if (!content) return ''
+  return content.replace(/\n/g, '<br>')
+}
 
 // 加载运行中的服务列表
 const loadRunningServices = async () => {
@@ -162,6 +163,16 @@ const sendMessage = async () => {
   const prompt = inputText.value
   inputText.value = ''
 
+  // 添加AI消息占位
+  const aiMsg = {
+    id: messages.value.length + 1,
+    role: 'assistant',
+    content: '',
+    tokens: 0,
+    time: new Date().toLocaleTimeString()
+  }
+  messages.value.push(aiMsg)
+
   try {
     // 获取选中的服务信息
     const service = runningServices.value.find(s => s.id === selectedModel.value)
@@ -169,53 +180,95 @@ const sendMessage = async () => {
       throw new Error('服务不存在')
     }
 
-    // 调用实际的推理服务
-    const response = await fetch(`http://192.168.31.24:${service.port}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: service.model_id || 'default',
-        messages: messages.value.filter(m => m.role !== 'system').map(m => ({
-          role: m.role,
-          content: m.content
-        })),
-        max_tokens: 512,
-        temperature: 0.7,
-        stream: false
+    if (streamMode.value) {
+      // 流式输出
+      const response = await fetch(`http://192.168.31.24:${service.port}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: service.model_id || 'default',
+          messages: messages.value.filter(m => m.role !== 'system' && m.content).slice(0, -1).map(m => ({
+            role: m.role,
+            content: m.content
+          })),
+          max_tokens: 2048,
+          temperature: 0.7,
+          stream: true
+        })
       })
-    })
 
-    if (!response.ok) {
-      throw new Error(`请求失败: ${response.status}`)
+      if (!response.ok) {
+        throw new Error(`请求失败: ${response.status}`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let fullContent = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            if (data === '[DONE]') continue
+
+            try {
+              const parsed = JSON.parse(data)
+              const delta = parsed.choices?.[0]?.delta?.content || ''
+              if (delta) {
+                fullContent += delta
+                aiMsg.content = fullContent
+                // 滚动到底部
+                await nextTick()
+                if (messagesRef.value) {
+                  messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+                }
+              }
+            } catch (e) {
+              // 忽略解析错误
+            }
+          }
+        }
+      }
+
+      aiMsg.tokens = fullContent.length
+    } else {
+      // 非流式输出
+      const response = await fetch(`http://192.168.31.24:${service.port}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: service.model_id || 'default',
+          messages: messages.value.filter(m => m.role !== 'system' && m.content).slice(0, -1).map(m => ({
+            role: m.role,
+            content: m.content
+          })),
+          max_tokens: 2048,
+          temperature: 0.7,
+          stream: false
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`请求失败: ${response.status}`)
+      }
+
+      const data = await response.json()
+      aiMsg.content = data.choices?.[0]?.message?.content || '无响应内容'
+      aiMsg.tokens = data.usage?.completion_tokens || aiMsg.content.length
     }
-
-    const data = await response.json()
-    const aiContent = data.choices?.[0]?.message?.content || '无响应内容'
-
-    // 添加AI回复
-    const aiMsg = {
-      id: messages.value.length + 1,
-      role: 'assistant',
-      content: aiContent,
-      tokens: data.usage?.completion_tokens || aiContent.length,
-      time: new Date().toLocaleTimeString()
-    }
-    messages.value.push(aiMsg)
   } catch (error) {
     console.error('Send message error:', error)
-    ElMessage.error(`发送失败: ${error.message}`)
-
-    // 添加错误提示
-    const errorMsg = {
-      id: messages.value.length + 1,
-      role: 'assistant',
-      content: `抱歉，请求失败: ${error.message}\n请确保服务正在运行。`,
-      tokens: 0,
-      time: new Date().toLocaleTimeString()
-    }
-    messages.value.push(errorMsg)
+    aiMsg.content = `抱歉，请求失败: ${error.message}\n请确保服务正在运行。`
   } finally {
     sending.value = false
   }
@@ -333,8 +386,13 @@ onMounted(() => {
   margin-top: 12px;
 }
 
+.left-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .model-hint {
   margin-top: 8px;
-  text-align: center;
 }
 </style>

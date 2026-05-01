@@ -79,10 +79,6 @@
         <el-main class="main-content">
           <router-view />
         </el-main>
-
-        <el-footer class="footer">
-          LLM Portal v1.0.0 | 本地大模型部署平台
-        </el-footer>
       </el-container>
     </el-container>
   </div>
@@ -190,14 +186,5 @@ html, body, #app, .app-container {
   background-color: #f0f2f5;
   padding: 20px;
   overflow-y: auto;
-}
-
-.footer {
-  background-color: #fff;
-  text-align: center;
-  color: #999;
-  font-size: 12px;
-  line-height: 40px;
-  border-top: 1px solid #e8e8e8;
 }
 </style>
